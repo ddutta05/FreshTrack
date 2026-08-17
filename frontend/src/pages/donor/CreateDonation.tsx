@@ -12,11 +12,12 @@ import { donationService } from '@/services/services';
 import { FOOD_CATEGORIES } from '@/types';
 
 const SAMPLE_IMAGES = [
-  'https://images.pexels.com/photos/247466/pexels-photo-247466.jpeg?auto=compress&cs=tinysrgb&w=600',
-  'https://images.pexels.com/photos/13934650/pexels-photo-13934650.jpeg?auto=compress&cs=tinysrgb&w=600',
-  'https://images.pexels.com/photos/1656663/pexels-photo-1656663.jpeg?auto=compress&cs=tinysrgb&w=600',
-  'https://images.pexels.com/photos/209194/pexels-photo-209194.jpeg?auto=compress&cs=tinysrgb&w=600',
-  'https://images.pexels.com/photos/1132047/pexels-photo-1132047.jpeg?auto=compress&cs=tinysrgb&w=600',
+
+  'https://images.pexels.com/photos/1640777/pexels-photo-1640777.jpeg?auto=compress&cs=tinysrgb&w=600',
+  'https://images.pexels.com/photos/958545/pexels-photo-958545.jpeg?auto=compress&cs=tinysrgb&w=600',
+  'https://images.pexels.com/photos/1279330/pexels-photo-1279330.jpeg?auto=compress&cs=tinysrgb&w=600',
+  'https://images.pexels.com/photos/376464/pexels-photo-376464.jpeg?auto=compress&cs=tinysrgb&w=600',
+  'https://images.pexels.com/photos/262978/pexels-photo-262978.jpeg?auto=compress&cs=tinysrgb&w=600',
 ];
 
 export default function CreateDonation() {
@@ -123,13 +124,7 @@ export default function CreateDonation() {
           />
 
           <div className="grid sm:grid-cols-2 gap-4">
-            <Input
-              label="Available Until"
-              type="datetime-local"
-              value={form.availableUntil}
-              onChange={(e) => handleChange('availableUntil', e.target.value)}
-              required
-            />
+            
             <Input
               label="Pickup Location"
               placeholder="e.g. Downtown Community Center, 123 Main St"

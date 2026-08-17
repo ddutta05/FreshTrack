@@ -71,7 +71,7 @@ export default function Navbar() {
                     <item.icon className="w-4 h-4" /> {item.label}
                   </Link>
                 ))}
-                {user && <NotificationDropdown />}
+                {user && user.role !== 'admin' && <NotificationDropdown />}
                 <button onClick={handleLogout} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-gray-600 hover:text-red-600 hover:bg-red-50 transition-colors ml-1">
                   <LogOut className="w-4 h-4" /> Logout
                 </button>

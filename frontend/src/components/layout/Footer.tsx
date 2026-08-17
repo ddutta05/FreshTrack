@@ -39,12 +39,7 @@ export default function Footer() {
           </div>
         </div>
 
-        <div className="border-t border-gray-800 mt-8 pt-6 flex flex-col sm:flex-row items-center justify-between gap-2">
-          <p className="text-sm text-gray-500">&copy; {new Date().getFullYear()} FreshTrack. All rights reserved.</p>
-          <p className="text-sm text-gray-500 flex items-center gap-1.5">
-            Made with <Heart className="w-4 h-4 text-red-400" /> for a better world
-          </p>
-        </div>
+        
       </div>
     </footer>
   );

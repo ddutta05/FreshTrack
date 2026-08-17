@@ -42,10 +42,10 @@ export default function LandingPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-4">
                   <div className="rounded-2xl overflow-hidden shadow-lg h-56">
-                    <img src="https://images.pexels.com/photos/1640777/pexels-photo-1640777.jpeg?auto=compress&cs=tinysrgb&w=500" alt="Fresh food" className="w-full h-full object-cover" />
+                    <img src="https://images.pexels.com/photos/315755/pexels-photo-315755.jpeg?auto=compress&cs=tinysrgb&w=500" alt="Fresh food" className="w-full h-full object-cover" />
                   </div>
                   <div className="rounded-2xl overflow-hidden shadow-lg h-32">
-                    <img src="https://images.pexels.com/photos/1300350/pexels-photo-1300350.jpeg?auto=compress&cs=tinysrgb&w=500" alt="Community" className="w-full h-full object-cover" />
+                    <img src="https://images.pexels.com/photos/1435904/pexels-photo-1435904.jpeg?auto=compress&cs=tinysrgb&w=500" alt="Community" className="w-full h-full object-cover" />
                   </div>
                 </div>
                 <div className="space-y-4 pt-8">
