@@ -155,9 +155,9 @@ export default function DonationDetails() {
                 variant="success"
                 className="w-full mt-4"
                 onClick={handleComplete}
-                disabled={actionLoading || donation.status === 'completed'}
+                disabled={actionLoading}
               >
-                {actionLoading ? 'Processing...' : donation.status === 'completed' ? 'Completed' : 'Mark as Completed'}
+                {actionLoading ? 'Processing...' : 'Mark as Completed'}
               </Button>
             </div>
           )}

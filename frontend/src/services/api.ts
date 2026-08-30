@@ -23,7 +23,8 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     console.error('API Error:', error);
-    return Promise.reject(error);
+    const message = error?.response?.data?.message || error?.message || 'Request failed';
+    return Promise.reject(new Error(message));
   }
 );
 
@@ -38,6 +39,7 @@ export const API_ENDPOINTS = {
     get: (id: string) => `/users/${id}`,
     update: (id: string) => `/users/${id}`,
     disable: (id: string) => `/users/${id}/disable`,
+    enable: (id: string) => `/users/${id}/enable`,
   },
   donations: {
     list: '/donations',
@@ -58,4 +60,4 @@ export const API_ENDPOINTS = {
 };
 
 // Flag to control mock vs real API
-export const USE_MOCK_DATA = true;
+export const USE_MOCK_DATA = false;

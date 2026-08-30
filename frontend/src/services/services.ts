@@ -5,6 +5,12 @@ import type { User, Donation, DonationRequest, Notification, UserRole } from '@/
 // Simulate network delay
 const delay = (ms: number = 400) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const unwrap = <T,>(payload: any): T => {
+  if (payload?.data?.items) return payload.data.items as T;
+  if (payload?.data !== undefined) return payload.data as T;
+  return payload as T;
+};
+
 // ===== AUTH =====
 export const authService = {
   async login(email: string, password: string, role: UserRole): Promise<User> {
@@ -17,9 +23,10 @@ export const authService = {
       return user;
     }
     const { data } = await api.post(API_ENDPOINTS.auth.login, { email, password, role });
-    localStorage.setItem('freshtrack_token', data.token);
-    localStorage.setItem('freshtrack_user', JSON.stringify(data.user));
-    return data.user;
+    const result = unwrap<{ token: string; user: User }>(data);
+    localStorage.setItem('freshtrack_token', result.token);
+    localStorage.setItem('freshtrack_user', JSON.stringify(result.user));
+    return result.user;
   },
 
   async register(payload: {
@@ -51,9 +58,10 @@ export const authService = {
       return newUser;
     }
     const { data } = await api.post(API_ENDPOINTS.auth.register, payload);
-    localStorage.setItem('freshtrack_token', data.token);
-    localStorage.setItem('freshtrack_user', JSON.stringify(data.user));
-    return data.user;
+    const result = unwrap<{ token: string; user: User }>(data);
+    localStorage.setItem('freshtrack_token', result.token);
+    localStorage.setItem('freshtrack_user', JSON.stringify(result.user));
+    return result.user;
   },
 
   logout(): void {
@@ -75,7 +83,7 @@ export const donationService = {
       return [...mockDonations];
     }
     const { data } = await api.get(API_ENDPOINTS.donations.list);
-    return data;
+    return unwrap<Donation[]>(data);
   },
 
   async getById(id: string): Promise<Donation> {
@@ -86,7 +94,7 @@ export const donationService = {
       return donation;
     }
     const { data } = await api.get(API_ENDPOINTS.donations.get(id));
-    return data;
+    return unwrap<Donation>(data);
   },
 
   async getByDonor(donorId: string): Promise<Donation[]> {
@@ -95,7 +103,7 @@ export const donationService = {
       return mockDonations.filter((d) => d.donorId === donorId);
     }
     const { data } = await api.get(API_ENDPOINTS.donations.myDonations);
-    return data;
+    return unwrap<Donation[]>(data);
   },
 
   async create(payload: Omit<Donation, 'id' | 'donorId' | 'donorName' | 'status' | 'createdAt'>, donor: User): Promise<Donation> {
@@ -113,7 +121,7 @@ export const donationService = {
       return newDonation;
     }
     const { data } = await api.post(API_ENDPOINTS.donations.create, payload);
-    return data;
+    return unwrap<Donation>(data);
   },
 
   async updateStatus(id: string, status: Donation['status']): Promise<Donation> {
@@ -124,8 +132,8 @@ export const donationService = {
       donation.status = status;
       return donation;
     }
-    const { data } = await api.patch(API_ENDPOINTS.donations.update(id), { status });
-    return data;
+    const { data } = await api.put(API_ENDPOINTS.donations.update(id), { status });
+    return unwrap<Donation>(data);
   },
 
   async remove(id: string): Promise<void> {
@@ -147,7 +155,7 @@ export const requestService = {
       return mockRequests.filter((r) => r.donationId === donationId);
     }
     const { data } = await api.get(`${API_ENDPOINTS.requests.list}?donationId=${donationId}`);
-    return data;
+    return unwrap<DonationRequest[]>(data);
   },
 
   async getByNGO(ngoId: string): Promise<DonationRequest[]> {
@@ -160,7 +168,7 @@ export const requestService = {
       }));
     }
     const { data } = await api.get(API_ENDPOINTS.requests.myRequests);
-    return data;
+    return unwrap<DonationRequest[]>(data);
   },
 
   async create(payload: { donationId: string; ngoId: string; ngoName: string; message: string }): Promise<DonationRequest> {
@@ -184,7 +192,7 @@ export const requestService = {
       return newRequest;
     }
     const { data } = await api.post(API_ENDPOINTS.requests.create, payload);
-    return data;
+    return unwrap<DonationRequest>(data);
   },
 
   async accept(id: string): Promise<DonationRequest> {
@@ -203,7 +211,7 @@ export const requestService = {
       return request;
     }
     const { data } = await api.post(API_ENDPOINTS.requests.accept(id));
-    return data;
+    return unwrap<DonationRequest>(data);
   },
 
   async reject(id: string): Promise<DonationRequest> {
@@ -221,7 +229,7 @@ export const requestService = {
       return request;
     }
     const { data } = await api.post(API_ENDPOINTS.requests.reject(id));
-    return data;
+    return unwrap<DonationRequest>(data);
   },
 
   async complete(id: string): Promise<DonationRequest> {
@@ -236,7 +244,7 @@ export const requestService = {
       return request;
     }
     const { data } = await api.post(API_ENDPOINTS.requests.complete(id));
-    return data;
+    return unwrap<DonationRequest>(data);
   },
 };
 
@@ -248,7 +256,7 @@ export const userService = {
       return [...mockUsers];
     }
     const { data } = await api.get(API_ENDPOINTS.users.list);
-    return data;
+    return unwrap<User[]>(data);
   },
 
   async getById(id: string): Promise<User> {
@@ -259,7 +267,7 @@ export const userService = {
       return user;
     }
     const { data } = await api.get(API_ENDPOINTS.users.get(id));
-    return data;
+    return unwrap<User>(data);
   },
 
   async update(id: string, payload: Partial<User>): Promise<User> {
@@ -272,7 +280,7 @@ export const userService = {
       return user;
     }
     const { data } = await api.put(API_ENDPOINTS.users.update(id), payload);
-    return data;
+    return unwrap<User>(data);
   },
 
   async disable(id: string): Promise<void> {
@@ -284,6 +292,16 @@ export const userService = {
     }
     await api.post(API_ENDPOINTS.users.disable(id));
   },
+
+  async enable(id: string): Promise<void> {
+    if (USE_MOCK_DATA) {
+      await delay();
+      const user = mockUsers.find((u) => u.id === id);
+      if (user) user.status = 'active';
+      return;
+    }
+    await api.post(API_ENDPOINTS.users.enable(id));
+  },
 };
 
 // ===== NOTIFICATIONS =====
@@ -293,8 +311,8 @@ export const notificationService = {
       await delay(200);
       return [...mockNotifications];
     }
-    const { data } = await api.get(`/notifications?userId=${userId}`);
-    return data;
+    const { data } = await api.get('/notifications');
+    return unwrap<Notification[]>(data);
   },
 
   async markRead(id: string): Promise<void> {

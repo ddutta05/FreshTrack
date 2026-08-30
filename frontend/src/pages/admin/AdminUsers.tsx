@@ -32,7 +32,12 @@ export default function AdminUsers() {
 
   const handleDisable = async (userId: string) => {
     try {
-      await userService.disable(userId);
+      const user = users.find((u) => u.id === userId);
+      if (user?.status === 'disabled') {
+        await userService.enable(userId);
+      } else {
+        await userService.disable(userId);
+      }
       const updated = await userService.getAll();
       setUsers(updated);
       toast('User status updated.', 'success');
