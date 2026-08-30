@@ -128,7 +128,7 @@ const [role, setRole] = useState<UserRole>(
             <p className="text-xs text-gray-600 flex items-start gap-2">
               <UserCircle className="w-4 h-4 text-primary-500 flex-shrink-0 mt-0.5" />
               <span>
-                <strong>Demo accounts:</strong> john@demo.com (donor), david@demo.com (NGO), admin@demo.com (admin). Any password works.
+                <strong>gmail accounts:</strong> raj@gmail.com (donor), raha@gmail.com (NGO), admin@gmail.com (admin). 
               </span>
             </p>
           </div>

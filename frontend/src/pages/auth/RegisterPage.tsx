@@ -85,7 +85,7 @@ export default function RegisterPage() {
             <form onSubmit={handleSubmit} className="space-y-4">
               <Input
                 label="Full Name"
-                placeholder="John Carter"
+                placeholder="raj Carter"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 required

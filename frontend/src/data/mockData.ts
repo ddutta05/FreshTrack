@@ -3,8 +3,8 @@ import type { User, Donation, DonationRequest, Notification } from '@/types';
 export const mockUsers: User[] = [
   {
     id: 'u1',
-    name: 'John Carter',
-    email: 'john@demo.com',
+    name: 'raj Carter',
+    email: 'raj@gmail.com',
     role: 'donor',
     phone: '+1 (555) 123-4567',
     status: 'active',
@@ -13,7 +13,7 @@ export const mockUsers: User[] = [
   {
     id: 'u2',
     name: 'Sarah Lin',
-    email: 'sarah@demo.com',
+    email: 'sarah@gmail.com',
     role: 'donor',
     phone: '+1 (555) 234-5678',
     status: 'active',
@@ -22,7 +22,7 @@ export const mockUsers: User[] = [
   {
     id: 'u3',
     name: 'Maria Gonzalez',
-    email: 'maria@demo.com',
+    email: 'maria@gmail.com',
     role: 'donor',
     phone: '+1 (555) 345-6789',
     status: 'active',
@@ -30,8 +30,8 @@ export const mockUsers: User[] = [
   },
   {
     id: 'u4',
-    name: 'David Okafor',
-    email: 'david@demo.com',
+    name: 'raha Okafor',
+    email: 'raha@gmail.com',
     role: 'ngo',
     phone: '+1 (555) 456-7890',
     organizationName: 'Hope Community Kitchen',
@@ -41,7 +41,7 @@ export const mockUsers: User[] = [
   {
     id: 'u5',
     name: 'Emily Chen',
-    email: 'emily@demo.com',
+    email: 'emily@gmail.com',
     role: 'ngo',
     phone: '+1 (555) 567-8901',
     organizationName: 'City Food Bank',
@@ -51,7 +51,7 @@ export const mockUsers: User[] = [
   {
     id: 'u6',
     name: 'Robert Kim',
-    email: 'robert@demo.com',
+    email: 'robert@gmail.com',
     role: 'ngo',
     phone: '+1 (555) 678-9012',
     organizationName: 'Shelter Outreach NPO',
@@ -61,7 +61,7 @@ export const mockUsers: User[] = [
   {
     id: 'u7',
     name: 'Admin User',
-    email: 'admin@demo.com',
+    email: 'admin@gmail.com',
     role: 'admin',
     phone: '+1 (555) 000-0000',
     status: 'active',
@@ -70,7 +70,7 @@ export const mockUsers: User[] = [
   {
     id: 'u8',
     name: 'Lisa Park',
-    email: 'lisa@demo.com',
+    email: 'lisa@gmail.com',
     role: 'donor',
     phone: '+1 (555) 890-1234',
     status: 'disabled',
@@ -103,7 +103,7 @@ export const mockDonations: Donation[] = [
     location: 'Sunrise Bakery, 220 Baker St',
     availableUntil: '2026-08-14T10:00:00Z',
     donorId: 'u1',
-    donorName: 'John Carter',
+    donorName: 'raj Carter',
     status: 'accepted',
     createdAt: '2026-08-12T06:00:00Z',
   },
@@ -145,7 +145,7 @@ export const mockDonations: Donation[] = [
     location: 'Greenleaf Cafe, 34 Park St',
     availableUntil: '2026-08-14T16:00:00Z',
     donorId: 'u1',
-    donorName: 'John Carter',
+    donorName: 'raj Carter',
     status: 'expired',
     createdAt: '2026-08-09T08:00:00Z',
   },
