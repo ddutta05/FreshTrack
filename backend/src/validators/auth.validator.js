@@ -2,7 +2,16 @@ const { body } = require("express-validator");
 const { USER_ROLES } = require("../utils/constants");
 
 const registerValidator = [
-  body("name").trim().isLength({ min: 2, max: 100 }).withMessage("Name must be 2-100 characters"),
+  body("name")
+    .if(body("role").equals(USER_ROLES.DONOR))
+    .trim()
+    .isLength({ min: 2, max: 100 })
+    .withMessage("Name must be 2-100 characters"),
+  body("name")
+    .optional()
+    .trim()
+    .isLength({ min: 2, max: 100 })
+    .withMessage("Name must be 2-100 characters"),
   body("email").trim().isEmail().withMessage("Valid email is required").normalizeEmail(),
   body("password")
     .isLength({ min: 6, max: 128 })

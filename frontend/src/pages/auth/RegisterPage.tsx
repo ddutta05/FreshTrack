@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Leaf, Mail, Lock, Eye, EyeOff, User as UserIcon, Phone, Building2 } from 'lucide-react';
+import { Leaf, Eye, EyeOff } from 'lucide-react';
 import Input from '@/components/common/Input';
 import Select from '@/components/common/Select';
 import Button from '@/components/common/Button';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
 import type { UserRole } from '@/types';
+import { ApiError } from '@/services/api';
 
 export default function RegisterPage() {
   const { register } = useAuth();
@@ -28,33 +29,66 @@ export default function RegisterPage() {
     e.preventDefault();
     setError('');
 
+    const trimmedName = name.trim();
+    const normalizedEmail = email.trim().toLowerCase();
+    const trimmedPhone = phone.trim();
+    const trimmedOrgName = orgName.trim();
+
     if (password !== confirmPassword) {
       setError('Passwords do not match.');
+      return;
+    }
+    if (role === 'donor' && (trimmedName.length < 2 || trimmedName.length > 100)) {
+      setError('Name must be 2-100 characters.');
+      return;
+    }
+    if (!/^\S+@\S+\.\S+$/.test(normalizedEmail)) {
+      setError('Please enter a valid email address.');
       return;
     }
     if (password.length < 6) {
       setError('Password must be at least 6 characters.');
       return;
     }
+    if (!/[A-Za-z]/.test(password)) {
+      setError('Password must include at least one letter.');
+      return;
+    }
+    if (!/[0-9]/.test(password)) {
+      setError('Password must include at least one number.');
+      return;
+    }
     if (role === 'ngo' && !orgName.trim()) {
       setError('Organization name is required for NGO accounts.');
+      return;
+    }
+    if (role === 'ngo' && (trimmedOrgName.length < 2 || trimmedOrgName.length > 150)) {
+      setError('Organization name must be 2-150 characters.');
+      return;
+    }
+    if (trimmedPhone.length > 30) {
+      setError('Phone must be 30 characters or less.');
       return;
     }
 
     setLoading(true);
     try {
       const user = await register({
-        name,
-        email,
+        name: role === 'donor' ? trimmedName : undefined,
+        email: normalizedEmail,
         password,
         role,
-        phone,
-        organizationName: role === 'ngo' ? orgName : undefined,
+        phone: trimmedPhone || undefined,
+        organizationName: role === 'ngo' ? trimmedOrgName : undefined,
       });
       toast(`Account created! Welcome, ${user.name.split(' ')[0]}.`, 'success');
       navigate('/dashboard');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Registration failed');
+      if (err instanceof ApiError && err.details?.length) {
+        setError(err.details[0].message);
+      } else {
+        setError(err instanceof Error ? err.message : 'Registration failed');
+      }
     } finally {
       setLoading(false);
     }
@@ -83,13 +117,15 @@ export default function RegisterPage() {
             )}
 
             <form onSubmit={handleSubmit} className="space-y-4">
-              <Input
-                label="Full Name"
-                placeholder="raj Carter"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-              />
+              {role === 'donor' && (
+                <Input
+                  label="Full Name"
+                  placeholder="raj Carter"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  required
+                />
+              )}
 
               <Input
                 label="Email"

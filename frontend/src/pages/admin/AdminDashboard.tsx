@@ -5,29 +5,26 @@ import DashboardLayout from '@/components/layout/DashboardLayout';
 import DashboardCard from '@/components/donation/DashboardCard';
 import DonationCard from '@/components/donation/DonationCard';
 import { LoadingSpinner, ErrorState } from '@/components/common/LoadingSpinner';
-import { userService, donationService } from '@/services/services';
-import type { User, Donation } from '@/types';
+import { adminService } from '@/services/services';
+import type { Donation } from '@/types';
+import type { PlatformStats } from '@/services/services';
 
 export default function AdminDashboard() {
-  const [users, setUsers] = useState<User[]>([]);
+  const [stats, setStats] = useState<PlatformStats | null>(null);
   const [donations, setDonations] = useState<Donation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
   useEffect(() => {
-    Promise.all([userService.getAll(), donationService.getAll()])
-      .then(([u, d]) => {
-        setUsers(u);
+    Promise.all([adminService.getStats(), adminService.getDonations({ limit: 3 })])
+      .then(([platformStats, d]) => {
+        setStats(platformStats);
         setDonations(d);
       })
       .catch(() => setError(true))
       .finally(() => setLoading(false));
   }, []);
 
-  const totalUsers = users.length;
-  const totalDonations = donations.length;
-  const activeDonations = donations.filter((d) => d.status === 'available' || d.status === 'pending' || d.status === 'accepted').length;
-  const completedDonations = donations.filter((d) => d.status === 'completed').length;
   const recentDonations = donations.slice(0, 3);
 
   if (loading) {
@@ -46,6 +43,14 @@ export default function AdminDashboard() {
     );
   }
 
+  if (!stats) {
+    return (
+      <DashboardLayout>
+        <ErrorState message="No stats available." onRetry={() => window.location.reload()} />
+      </DashboardLayout>
+    );
+  }
+
   return (
     <DashboardLayout>
       <div className="mb-8">
@@ -54,10 +59,10 @@ export default function AdminDashboard() {
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <DashboardCard icon={<Users className="w-6 h-6" />} label="Total Users" value={totalUsers} color="primary" />
-        <DashboardCard icon={<Package className="w-6 h-6" />} label="Total Donations" value={totalDonations} color="blue" />
-        <DashboardCard icon={<Clock className="w-6 h-6" />} label="Active Donations" value={activeDonations} color="amber" />
-        <DashboardCard icon={<CheckCircle2 className="w-6 h-6" />} label="Completed" value={completedDonations} color="gray" />
+        <DashboardCard icon={<Users className="w-6 h-6" />} label="Total Users" value={stats.totalUsers} color="primary" />
+        <DashboardCard icon={<Package className="w-6 h-6" />} label="Total Donations" value={stats.totalDonations} color="blue" />
+        <DashboardCard icon={<Clock className="w-6 h-6" />} label="Active Donations" value={stats.availableDonations + stats.pendingDonations + stats.acceptedDonations} color="amber" />
+        <DashboardCard icon={<CheckCircle2 className="w-6 h-6" />} label="Completed" value={stats.completedDonations} color="gray" />
       </div>
 
       <div className="grid lg:grid-cols-2 gap-6">

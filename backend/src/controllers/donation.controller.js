@@ -6,6 +6,24 @@ const { AppError } = require("../utils/errors");
 const { getPagination, toPagination } = require("../utils/pagination");
 const { DONATION_STATUS, USER_ROLES, REQUEST_STATUS } = require("../utils/constants");
 const { toDonationClient, expireDonationsAndNotify } = require("../services/donation.service");
+const { normalizeStoredImagePath } = require("../utils/imagePath");
+
+function resolveIncomingImage(req) {
+  if (req.file?.filename) {
+    return `/uploads/${req.file.filename}`;
+  }
+
+  if (req.body.image === undefined) {
+    return undefined;
+  }
+
+  const normalized = normalizeStoredImagePath(req.body.image);
+  if (!normalized && req.body.image) {
+    throw new AppError("Invalid image value", 422, "INVALID_IMAGE_VALUE");
+  }
+
+  return normalized;
+}
 
 const listDonations = asyncHandler(async (req, res) => {
   await expireDonationsAndNotify();
@@ -98,17 +116,14 @@ const createDonation = asyncHandler(async (req, res) => {
     throw new AppError("availableUntil must be a future date", 422, "INVALID_AVAILABLE_UNTIL");
   }
 
-  const imagePath = req.file ? `/uploads/${req.file.filename}` : req.body.image;
-  if (!imagePath) {
-    throw new AppError("Donation image is required", 422, "IMAGE_REQUIRED");
-  }
+  const imagePath = resolveIncomingImage(req);
 
   const donation = await Donation.create({
     foodName: req.body.foodName,
     category: req.body.category,
     quantity: req.body.quantity,
     description: req.body.description,
-    image: imagePath,
+    ...(imagePath ? { image: imagePath } : {}),
     location: req.body.location,
     availableUntil,
     donorId: req.user.id,
@@ -150,10 +165,9 @@ const updateDonation = asyncHandler(async (req, res) => {
     }
   }
 
-  if (req.file) {
-    donation.image = `/uploads/${req.file.filename}`;
-  } else if (req.body.image) {
-    donation.image = req.body.image;
+  const imagePath = resolveIncomingImage(req);
+  if (imagePath !== undefined) {
+    donation.image = imagePath;
   }
 
   await donation.save();

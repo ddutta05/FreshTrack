@@ -11,15 +11,6 @@ import { useToast } from '@/context/ToastContext';
 import { donationService } from '@/services/services';
 import { FOOD_CATEGORIES } from '@/types';
 
-const SAMPLE_IMAGES = [
-
-  'https://images.pexels.com/photos/1640777/pexels-photo-1640777.jpeg?auto=compress&cs=tinysrgb&w=600',
-  'https://images.pexels.com/photos/958545/pexels-photo-958545.jpeg?auto=compress&cs=tinysrgb&w=600',
-  'https://images.pexels.com/photos/1279330/pexels-photo-1279330.jpeg?auto=compress&cs=tinysrgb&w=600',
-  'https://images.pexels.com/photos/376464/pexels-photo-376464.jpeg?auto=compress&cs=tinysrgb&w=600',
-  'https://images.pexels.com/photos/262978/pexels-photo-262978.jpeg?auto=compress&cs=tinysrgb&w=600',
-];
-
 export default function CreateDonation() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -32,8 +23,9 @@ export default function CreateDonation() {
     description: '',
     availableUntil: '',
     location: '',
-    image: SAMPLE_IMAGES[Math.floor(Math.random() * SAMPLE_IMAGES.length)],
   });
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -46,6 +38,11 @@ export default function CreateDonation() {
     setError('');
     if (!user) return;
 
+    if (!form.availableUntil) {
+      setError('Please provide when this donation is available until.');
+      return;
+    }
+
     setLoading(true);
     try {
       await donationService.create(
@@ -54,11 +51,10 @@ export default function CreateDonation() {
           category: form.category,
           quantity: form.quantity,
           description: form.description,
-          image: form.image,
           location: form.location,
           availableUntil: new Date(form.availableUntil).toISOString(),
+          imageFile: imageFile || undefined,
         },
-        user
       );
       toast('Donation posted successfully!', 'success');
       navigate('/my-donations');
@@ -124,7 +120,13 @@ export default function CreateDonation() {
           />
 
           <div className="grid sm:grid-cols-2 gap-4">
-            
+            <Input
+              label="Available Until"
+              type="datetime-local"
+              value={form.availableUntil}
+              onChange={(e) => handleChange('availableUntil', e.target.value)}
+              required
+            />
             <Input
               label="Pickup Location"
               placeholder="e.g. Downtown Community Center, 123 Main St"
@@ -138,26 +140,27 @@ export default function CreateDonation() {
             <label className="label">Food Image</label>
             <div className="flex items-center gap-4">
               <div className="w-24 h-24 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">
-                <img src={form.image} alt="Food preview" className="w-full h-full object-cover" />
+                {imagePreview ? (
+                  <img src={imagePreview} alt="Food preview" className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-gray-400 text-xs">No image</div>
+                )}
               </div>
               <div className="flex-1">
-                <p className="text-sm text-gray-500 mb-2">Choose a sample image:</p>
-                <div className="flex gap-2 flex-wrap">
-                  {SAMPLE_IMAGES.map((img) => (
-                    <button
-                      key={img}
-                      type="button"
-                      onClick={() => handleChange('image', img)}
-                      className={`w-12 h-12 rounded-lg overflow-hidden border-2 transition-all ${form.image === img ? 'border-primary-500 ring-2 ring-primary-200' : 'border-transparent hover:border-gray-300'}`}
-                    >
-                      <img src={img} alt="Sample" className="w-full h-full object-cover" />
-                    </button>
-                  ))}
-                </div>
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  className="input"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] || null;
+                    setImageFile(file);
+                    setImagePreview(file ? URL.createObjectURL(file) : '');
+                  }}
+                />
               </div>
             </div>
             <p className="mt-2 text-xs text-gray-400 flex items-center gap-1">
-              <ImageIcon className="w-3.5 h-3.5" /> Image upload will be available with the backend.
+              <ImageIcon className="w-3.5 h-3.5" /> Optional. JPG, PNG, WEBP, and GIF are supported.
             </p>
           </div>
 

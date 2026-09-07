@@ -1,7 +1,34 @@
 const path = require("path");
 const dotenv = require("dotenv");
 
-dotenv.config({ path: path.resolve(process.cwd(), ".env") });
+// Load backend/.env regardless of where the node process is started from.
+dotenv.config({ path: path.resolve(__dirname, "../../.env") });
+
+console.log("MongoDB URI configured:", Boolean(process.env.MONGODB_URI));
+
+function normalizeClusterHost(rawCluster) {
+  const cluster = (rawCluster || "").trim();
+  if (!cluster) return "";
+  return cluster
+    .replace(/^mongodb\+srv:\/\//i, "")
+    .replace(/^mongodb:\/\//i, "")
+    .replace(/\/$/, "")
+    .split("/")[0];
+}
+
+function buildMongoUriFromParts() {
+  const username = (process.env.MONGODB_USERNAME || "").trim();
+  const password = process.env.MONGODB_PASSWORD || "";
+  const clusterHost = normalizeClusterHost(process.env.MONGODB_CLUSTER);
+  const dbName = (process.env.MONGODB_DB_NAME || "freshtrack").trim();
+
+  if (!username || !password || !clusterHost) {
+    return undefined;
+  }
+
+  // Encode credentials to safely handle special characters in usernames/passwords.
+  return `mongodb+srv://${encodeURIComponent(username)}:${encodeURIComponent(password)}@${clusterHost}/${dbName}?retryWrites=true&w=majority`;
+}
 
 function mustGet(name, fallback) {
   const value = process.env[name] ?? fallback;
@@ -14,7 +41,8 @@ function mustGet(name, fallback) {
 const env = {
   nodeEnv: process.env.NODE_ENV || "development",
   port: Number(process.env.PORT || 5000),
-  mongoUri: mustGet("MONGODB_URI"),
+  mongoUri: mustGet("MONGODB_URI", buildMongoUriFromParts()),
+  mongoDbName: (process.env.MONGODB_DB_NAME || "freshtrack").trim(),
   jwtSecret: mustGet("JWT_SECRET"),
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || "7d",
   clientUrl: process.env.CLIENT_URL || "http://localhost:5173",

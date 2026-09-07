@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { MapPin, Clock, Package } from 'lucide-react';
 import type { Donation } from '@/types';
 import StatusBadge from '@/components/common/StatusBadge';
+import { getDonationImageUrl } from '@/utils/image';
 
 interface DonationCardProps {
   donation: Donation;
@@ -11,10 +13,22 @@ interface DonationCardProps {
 }
 
 export default function DonationCard({ donation, linkTo, showDonor = false, actionLabel = 'View Details' }: DonationCardProps) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const imageUrl = getDonationImageUrl(donation.image);
+
   return (
     <div className="card overflow-hidden flex flex-col hover:shadow-md transition-shadow">
       <div className="relative w-full h-48 bg-gray-100 overflow-hidden">
-        <img src={donation.image} alt={donation.foodName} className="w-full h-full object-cover" />
+        {imageUrl && !imageFailed ? (
+          <img
+            src={imageUrl}
+            onError={() => setImageFailed(true)}
+            alt={donation.foodName}
+            className="w-full h-full object-cover"
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center text-gray-400 text-sm">No image</div>
+        )}
         <div className="absolute top-3 left-3">
           <StatusBadge status={donation.status} />
         </div>

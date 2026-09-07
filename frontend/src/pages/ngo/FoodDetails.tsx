@@ -11,6 +11,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
 import { donationService, requestService } from '@/services/services';
 import type { Donation } from '@/types';
+import { getDonationImageUrl } from '@/utils/image';
 
 export default function FoodDetails() {
   const { id } = useParams();
@@ -25,6 +26,8 @@ export default function FoodDetails() {
   const [message, setMessage] = useState('We would like to collect this donation for distribution.');
   const [submitting, setSubmitting] = useState(false);
   const [alreadyRequested, setAlreadyRequested] = useState(false);
+  const [imageFailed, setImageFailed] = useState(false);
+  const [modalImageFailed, setModalImageFailed] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -47,8 +50,6 @@ export default function FoodDetails() {
     try {
       await requestService.create({
         donationId: donation.id,
-        ngoId: user.id,
-        ngoName: user.organizationName || user.name,
         message,
       });
       toast('Request sent successfully!', 'success');
@@ -78,7 +79,8 @@ export default function FoodDetails() {
     );
   }
 
-  const isAvailable = donation.status === 'available';
+  const isAvailable = donation.status === 'available' || donation.status === 'pending';
+  const imageUrl = getDonationImageUrl(donation.image);
 
   return (
     <DashboardLayout>
@@ -91,7 +93,16 @@ export default function FoodDetails() {
         <div className="lg:col-span-2 space-y-6">
           <div className="card overflow-hidden">
             <div className="w-full h-72 bg-gray-100">
-              <img src={donation.image} alt={donation.foodName} className="w-full h-full object-cover" />
+              {imageUrl && !imageFailed ? (
+                <img
+                  src={imageUrl}
+                  onError={() => setImageFailed(true)}
+                  alt={donation.foodName}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-gray-400 text-sm">No image</div>
+              )}
             </div>
             <div className="p-6">
               <div className="flex items-start justify-between mb-4">
@@ -170,7 +181,16 @@ export default function FoodDetails() {
         <div className="space-y-4">
           <div className="flex items-center gap-3 p-3 rounded-lg bg-gray-50">
             <div className="w-16 h-16 rounded-lg overflow-hidden flex-shrink-0">
-              <img src={donation.image} alt={donation.foodName} className="w-full h-full object-cover" />
+              {imageUrl && !modalImageFailed ? (
+                <img
+                  src={imageUrl}
+                  onError={() => setModalImageFailed(true)}
+                  alt={donation.foodName}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-gray-400 text-xs">No image</div>
+              )}
             </div>
             <div>
               <p className="font-medium text-gray-900">{donation.foodName}</p>

@@ -1,18 +1,19 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { User as UserIcon, Mail, Phone, Building2, Edit, Save, X } from 'lucide-react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import Input from '@/components/common/Input';
-import Select from '@/components/common/Select';
 import Button from '@/components/common/Button';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
 import { userService } from '@/services/services';
-import type { UserRole } from '@/types';
+import { LoadingSpinner, ErrorState } from '@/components/common/LoadingSpinner';
 
 export default function ProfilePage() {
   const { user, updateUser } = useAuth();
   const { toast } = useToast();
 
+  const [pageLoading, setPageLoading] = useState(true);
+  const [pageError, setPageError] = useState(false);
   const [editing, setEditing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({
@@ -22,13 +23,47 @@ export default function ProfilePage() {
     organizationName: user?.organizationName || '',
   });
 
+  useEffect(() => {
+    if (!user) return;
+
+    userService
+      .getMe()
+      .then((freshUser) => {
+        updateUser(freshUser);
+        setForm({
+          name: freshUser.name,
+          email: freshUser.email,
+          phone: freshUser.phone || '',
+          organizationName: freshUser.organizationName || '',
+        });
+      })
+      .catch(() => setPageError(true))
+      .finally(() => setPageLoading(false));
+  }, [user, updateUser]);
+
   if (!user) return null;
+
+  if (pageLoading) {
+    return (
+      <DashboardLayout>
+        <LoadingSpinner label="Loading profile..." />
+      </DashboardLayout>
+    );
+  }
+
+  if (pageError) {
+    return (
+      <DashboardLayout>
+        <ErrorState message="Failed to load profile." onRetry={() => window.location.reload()} />
+      </DashboardLayout>
+    );
+  }
 
   const handleSave = async () => {
     setLoading(true);
     try {
-      const updated = await userService.update(user.id, {
-        name: form.name,
+      const updated = await userService.updateMe({
+        name: user.role === 'donor' ? form.name : user.name,
         phone: form.phone,
         organizationName: form.organizationName || undefined,
       });
@@ -64,11 +99,11 @@ export default function ProfilePage() {
             <div className="flex items-center gap-4">
               <div className="w-20 h-20 rounded-full bg-white/20 flex items-center justify-center backdrop-blur-sm">
                 <span className="text-2xl font-bold text-white">
-                  {user.name.charAt(0).toUpperCase()}
+                  {(user.role === 'ngo' ? (user.organizationName || 'N') : user.name).charAt(0).toUpperCase()}
                 </span>
               </div>
               <div>
-                <h2 className="text-xl font-bold text-white">{user.name}</h2>
+                <h2 className="text-xl font-bold text-white">{user.role === 'ngo' ? (user.organizationName || 'NGO') : user.name}</h2>
                 <p className="text-primary-100 capitalize">{user.role}{user.organizationName && ` · ${user.organizationName}`}</p>
               </div>
             </div>
@@ -78,11 +113,13 @@ export default function ProfilePage() {
           <div className="p-6">
             {editing ? (
               <div className="space-y-4">
-                <Input
-                  label="Full Name"
-                  value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
-                />
+                {user.role === 'donor' && (
+                  <Input
+                    label="Full Name"
+                    value={form.name}
+                    onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  />
+                )}
                 <Input
                   label="Email"
                   value={form.email}
@@ -113,7 +150,7 @@ export default function ProfilePage() {
               </div>
             ) : (
               <div className="space-y-4">
-                <InfoRow icon={UserIcon} label="Name" value={user.name} />
+                {user.role === 'donor' && <InfoRow icon={UserIcon} label="Name" value={user.name} />}
                 <InfoRow icon={Mail} label="Email" value={user.email} />
                 <InfoRow icon={Phone} label="Phone" value={user.phone || 'N/A'} />
                 <InfoRow icon={Building2} label="Role" value={user.role} />

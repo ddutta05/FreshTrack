@@ -27,17 +27,20 @@ export default function NgoDashboard() {
       .finally(() => setLoading(false));
   }, [user]);
 
-  const availableCount = donations.filter((d) => d.status === 'available').length;
+  const availableCount = donations.filter((d) => d.status === 'available' || d.status === 'pending').length;
   const myRequestsCount = myRequests.filter((r) => r.status === 'pending').length;
   const acceptedCount = myRequests.filter((r) => r.status === 'accepted').length;
   const completedCount = myRequests.filter((r) => r.status === 'completed').length;
-  const recentAvailable = donations.filter((d) => d.status === 'available').slice(0, 3);
+  const recentAvailable = donations
+    .filter((d) => d.status === 'available' || d.status === 'pending')
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, 3);
 
   return (
     <DashboardLayout>
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-gray-900">
-          Welcome back, {user?.name.split(' ')[0]}!
+          Welcome back, {(user?.organizationName || 'NGO').split(' ')[0]}!
         </h1>
         <p className="text-gray-500 mt-1">Here's an overview of food available and your requests.</p>
       </div>

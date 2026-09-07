@@ -1,5 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom';
-import { Leaf, Home, Info, LogIn, UserPlus, LogOut, LayoutDashboard, Heart, Package, Users, ShoppingBag, ClipboardList, Menu, X } from 'lucide-react';
+import { Leaf, Home, Info, LogIn, UserPlus, LogOut, LayoutDashboard, Package, Users, ShoppingBag, ClipboardList, Menu, X } from 'lucide-react';
 import { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import NotificationDropdown from './NotificationDropdown';

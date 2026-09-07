@@ -2,9 +2,8 @@ import { useEffect, useState } from 'react';
 import { Users, Ban, Eye, Search } from 'lucide-react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import Button from '@/components/common/Button';
-import Input from '@/components/common/Input';
 import Modal from '@/components/common/Modal';
-import { LoadingSpinner, EmptyState, ErrorState, TableRowSkeleton } from '@/components/common/LoadingSpinner';
+import { EmptyState, ErrorState, TableRowSkeleton } from '@/components/common/LoadingSpinner';
 import { useToast } from '@/context/ToastContext';
 import { userService } from '@/services/services';
 import type { User } from '@/types';
@@ -17,6 +16,7 @@ export default function AdminUsers() {
   const [search, setSearch] = useState('');
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [showModal, setShowModal] = useState(false);
+  const [actionUserId, setActionUserId] = useState<string | null>(null);
 
   useEffect(() => {
     userService
@@ -31,6 +31,7 @@ export default function AdminUsers() {
   );
 
   const handleDisable = async (userId: string) => {
+    setActionUserId(userId);
     try {
       const user = users.find((u) => u.id === userId);
       if (user?.status === 'disabled') {
@@ -43,6 +44,8 @@ export default function AdminUsers() {
       toast('User status updated.', 'success');
     } catch {
       toast('Failed to update user status.', 'error');
+    } finally {
+      setActionUserId(null);
     }
   };
 
@@ -133,8 +136,8 @@ export default function AdminUsers() {
                           <Eye className="w-4 h-4" />
                         </Button>
                         {u.role !== 'admin' && (
-                          <Button size="sm" variant="danger" onClick={() => handleDisable(u.id)}>
-                            <Ban className="w-4 h-4" /> {u.status === 'disabled' ? 'Enable' : 'Disable'}
+                          <Button size="sm" variant="danger" onClick={() => handleDisable(u.id)} disabled={actionUserId === u.id}>
+                            <Ban className="w-4 h-4" /> {actionUserId === u.id ? 'Updating...' : u.status === 'disabled' ? 'Enable' : 'Disable'}
                           </Button>
                         )}
                       </div>

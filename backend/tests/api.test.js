@@ -51,6 +51,21 @@ describe("FreshTrack Backend API", () => {
       expect(decoded.password).toBeUndefined();
     });
 
+    test("registers NGO without personal name", async () => {
+      const res = await request(app).post("/api/auth/register").send({
+        email: "ngo-noname@test.dev",
+        password: "Pass1234",
+        role: USER_ROLES.NGO,
+        organizationName: "Community Relief"
+      });
+
+      expect(res.status).toBe(201);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.user.role).toBe(USER_ROLES.NGO);
+      expect(res.body.data.user.organizationName).toBe("Community Relief");
+      expect(res.body.data.user.name).toBe("Community Relief");
+    });
+
     test("prevents duplicate email", async () => {
       await createUser({ email: "dupe@test.dev" });
       const res = await request(app).post("/api/auth/register").send({
@@ -278,6 +293,16 @@ describe("FreshTrack Backend API", () => {
         .send({ donationId: donation._id.toString(), message: "Again" });
 
       expect(second.status).toBe(409);
+
+      const refreshedDonation = await Donation.findById(donation._id);
+      expect(refreshedDonation.status).toBe(DONATION_STATUS.AVAILABLE);
+
+      const requestableList = await request(app)
+        .get("/api/donations?availability=requestable")
+        .set("Authorization", authHeaderFor(ngo));
+
+      expect(requestableList.status).toBe(200);
+      expect(requestableList.body.data.some((d) => d.id === donation._id.toString())).toBe(true);
     });
 
     test("donor accepts then ngo completes request", async () => {

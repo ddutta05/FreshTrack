@@ -5,14 +5,13 @@ import DashboardLayout from '@/components/layout/DashboardLayout';
 import StatusBadge from '@/components/common/StatusBadge';
 import Button from '@/components/common/Button';
 import { LoadingSpinner, ErrorState } from '@/components/common/LoadingSpinner';
-import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
 import { donationService, requestService } from '@/services/services';
 import type { Donation, DonationRequest } from '@/types';
+import { getDonationImageUrl } from '@/utils/image';
 
 export default function DonationDetails() {
   const { id } = useParams();
-  const { user } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -21,6 +20,7 @@ export default function DonationDetails() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [imageFailed, setImageFailed] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -100,6 +100,7 @@ export default function DonationDetails() {
   }
 
   const acceptedRequest = requests.find((r) => r.status === 'accepted');
+  const imageUrl = getDonationImageUrl(donation.image);
 
   return (
     <DashboardLayout>
@@ -112,7 +113,16 @@ export default function DonationDetails() {
         <div className="lg:col-span-2 space-y-6">
           <div className="card overflow-hidden">
             <div className="w-full h-72 bg-gray-100">
-              <img src={donation.image} alt={donation.foodName} className="w-full h-full object-cover" />
+              {imageUrl && !imageFailed ? (
+                <img
+                  src={imageUrl}
+                  onError={() => setImageFailed(true)}
+                  alt={donation.foodName}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-gray-400 text-sm">No image</div>
+              )}
             </div>
             <div className="p-6">
               <div className="flex items-start justify-between mb-4">

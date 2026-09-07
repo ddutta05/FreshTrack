@@ -1,23 +1,56 @@
 import { useState, useEffect, useRef } from 'react';
-import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { Bell } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { notificationService } from '@/services/services';
 import type { Notification } from '@/types';
+import { connectSocket, disconnectSocket, onNewNotification } from '@/services/socket';
 
 export default function NotificationDropdown() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
+  const [markingAll, setMarkingAll] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!user) return;
-    notificationService.getAll(user.id).then((data) => {
-      setNotifications(data);
+    if (!user) {
+      setNotifications([]);
       setLoading(false);
+      return;
+    }
+
+    const loadNotifications = async () => {
+      setLoading(true);
+      try {
+        const data = await notificationService.getAll();
+        setNotifications(data);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadNotifications();
+
+    const token = localStorage.getItem('freshtrack_token');
+    if (!token) return;
+
+    connectSocket(token);
+    const unsubscribe = onNewNotification((notification) => {
+      setNotifications((prev) => {
+        if (prev.some((item) => item.id === notification.id)) {
+          return prev;
+        }
+        return [notification, ...prev];
+      });
     });
+
+    return () => {
+      unsubscribe();
+      disconnectSocket();
+    };
   }, [user]);
 
   useEffect(() => {
@@ -32,9 +65,38 @@ export default function NotificationDropdown() {
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
-  const handleMarkRead = (id: string) => {
-    notificationService.markRead(id);
-    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+  const handleNotificationClick = async (notification: Notification) => {
+    try {
+      if (!notification.read) {
+        await notificationService.markRead(notification.id);
+        setNotifications((prev) => prev.map((n) => (n.id === notification.id ? { ...n, read: true } : n)));
+      }
+    } catch {
+      // Navigation should still work even if marking as read fails.
+    } finally {
+      setOpen(false);
+    }
+
+    if (!notification.donationId || !user) {
+      return;
+    }
+
+    if (user.role === 'ngo') {
+      navigate(`/food/${notification.donationId}`);
+      return;
+    }
+
+    navigate(`/donations/${notification.donationId}`);
+  };
+
+  const handleMarkAllRead = async () => {
+    setMarkingAll(true);
+    try {
+      await notificationService.markAllRead();
+      setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    } finally {
+      setMarkingAll(false);
+    }
   };
 
   if (!user) return null;
@@ -57,7 +119,19 @@ export default function NotificationDropdown() {
       {open && (
         <div className="absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-lg border border-gray-200 animate-slide-down overflow-hidden z-50">
           <div className="px-4 py-3 border-b border-gray-100">
-            <h3 className="font-semibold text-gray-900">Notifications</h3>
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="font-semibold text-gray-900">Notifications</h3>
+              {!!notifications.length && (
+                <button
+                  type="button"
+                  onClick={handleMarkAllRead}
+                  disabled={markingAll || unreadCount === 0}
+                  className="text-xs font-medium text-primary-600 hover:text-primary-700 disabled:opacity-50"
+                >
+                  {markingAll ? 'Updating...' : 'Mark all read'}
+                </button>
+              )}
+            </div>
           </div>
           <div className="max-h-80 overflow-y-auto">
             {loading ? (
@@ -68,7 +142,7 @@ export default function NotificationDropdown() {
               notifications.map((n) => (
                 <div
                   key={n.id}
-                  onClick={() => handleMarkRead(n.id)}
+                  onClick={() => handleNotificationClick(n)}
                   className={`px-4 py-3 border-b border-gray-50 cursor-pointer hover:bg-gray-50 transition-colors ${!n.read ? 'bg-primary-50/40' : ''}`}
                 >
                   <p className="text-sm text-gray-700">{n.message}</p>

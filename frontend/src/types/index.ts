@@ -20,7 +20,7 @@ export interface Donation {
   category: string;
   quantity: string;
   description: string;
-  image: string;
+  image?: string;
   location: string;
   availableUntil: string;
   donorId: string;
@@ -47,6 +47,7 @@ export interface Notification {
   read: boolean;
   createdAt: string;
   donationId?: string;
+  requestId?: string;
 }
 
 export const FOOD_CATEGORIES = [

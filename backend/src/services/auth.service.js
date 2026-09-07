@@ -8,7 +8,14 @@ async function registerUser(payload) {
     throw new AppError("Admin registration is not allowed", 403, "ADMIN_REGISTRATION_FORBIDDEN");
   }
 
-  if (payload.role === USER_ROLES.NGO && !payload.organizationName) {
+  const normalizedName = typeof payload.name === "string" ? payload.name.trim() : "";
+  const normalizedOrgName = typeof payload.organizationName === "string" ? payload.organizationName.trim() : "";
+
+  if (payload.role === USER_ROLES.DONOR && !normalizedName) {
+    throw new AppError("Name is required for donor accounts", 422, "VALIDATION_ERROR");
+  }
+
+  if (payload.role === USER_ROLES.NGO && !normalizedOrgName) {
     throw new AppError("Organization name is required for NGO accounts", 422, "VALIDATION_ERROR");
   }
 
@@ -18,12 +25,12 @@ async function registerUser(payload) {
   }
 
   const user = await User.create({
-    name: payload.name,
+    name: payload.role === USER_ROLES.NGO ? normalizedOrgName : normalizedName,
     email: payload.email,
     password: payload.password,
     role: payload.role,
     phone: payload.phone,
-    organizationName: payload.role === USER_ROLES.NGO ? payload.organizationName : undefined,
+    organizationName: payload.role === USER_ROLES.NGO ? normalizedOrgName : undefined,
     status: USER_STATUS.ACTIVE
   });
 

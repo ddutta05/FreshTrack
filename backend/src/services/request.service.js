@@ -12,6 +12,7 @@ const {
 } = require("../utils/constants");
 const { createNotification } = require("./notification.service");
 const { expireDonationsAndNotify } = require("./donation.service");
+const { normalizeStoredImagePath } = require("../utils/imagePath");
 
 function toRequestClient(reqDoc) {
   return {
@@ -30,7 +31,7 @@ function toRequestClient(reqDoc) {
           category: reqDoc.donationId.category,
           quantity: reqDoc.donationId.quantity,
           description: reqDoc.donationId.description,
-          image: reqDoc.donationId.image,
+          image: normalizeStoredImagePath(reqDoc.donationId.image),
           location: reqDoc.donationId.location,
           availableUntil: reqDoc.donationId.availableUntil,
           donorId: reqDoc.donationId.donorId?._id ? reqDoc.donationId.donorId._id.toString() : reqDoc.donationId.donorId.toString(),
@@ -94,11 +95,6 @@ async function createRequest({ donationId, message, ngoUserId }) {
       ],
       { session }
     );
-
-    if (donation.status === DONATION_STATUS.AVAILABLE) {
-      donation.status = DONATION_STATUS.PENDING;
-      await donation.save({ session });
-    }
 
     await createNotification(
       {

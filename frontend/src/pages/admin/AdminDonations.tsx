@@ -4,10 +4,11 @@ import DashboardLayout from '@/components/layout/DashboardLayout';
 import Button from '@/components/common/Button';
 import Modal from '@/components/common/Modal';
 import StatusBadge from '@/components/common/StatusBadge';
-import { LoadingSpinner, EmptyState, ErrorState, TableRowSkeleton } from '@/components/common/LoadingSpinner';
+import { EmptyState, ErrorState, TableRowSkeleton } from '@/components/common/LoadingSpinner';
 import { useToast } from '@/context/ToastContext';
-import { donationService } from '@/services/services';
+import { adminService, donationService } from '@/services/services';
 import type { Donation } from '@/types';
+import { getDonationImageUrl } from '@/utils/image';
 
 export default function AdminDonations() {
   const { toast } = useToast();
@@ -20,8 +21,8 @@ export default function AdminDonations() {
   const [confirmDelete, setConfirmDelete] = useState<Donation | null>(null);
 
   useEffect(() => {
-    donationService
-      .getAll()
+    adminService
+      .getDonations()
       .then((data) => setDonations(data))
       .catch(() => setError(true))
       .finally(() => setLoading(false));
@@ -30,6 +31,7 @@ export default function AdminDonations() {
   const filtered = donations.filter(
     (d) => d.foodName.toLowerCase().includes(search.toLowerCase()) || d.location.toLowerCase().includes(search.toLowerCase())
   );
+  const selectedImageUrl = selectedDonation ? getDonationImageUrl(selectedDonation.image) : undefined;
 
   const handleRemove = async (donation: Donation) => {
     try {
@@ -108,7 +110,15 @@ export default function AdminDonations() {
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0">
-                          <img src={d.image} alt={d.foodName} className="w-full h-full object-cover" />
+                          {getDonationImageUrl(d.image) ? (
+                            <img
+                              src={getDonationImageUrl(d.image)}
+                              alt={d.foodName}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-gray-400 text-[10px]">No image</div>
+                          )}
                         </div>
                         <p className="font-medium text-gray-900">{d.foodName}</p>
                       </div>
@@ -149,7 +159,15 @@ export default function AdminDonations() {
         {selectedDonation && (
           <div className="space-y-3">
             <div className="w-full h-40 rounded-lg overflow-hidden mb-3">
-              <img src={selectedDonation.image} alt={selectedDonation.foodName} className="w-full h-full object-cover" />
+              {selectedImageUrl ? (
+                <img
+                  src={selectedImageUrl}
+                  alt={selectedDonation.foodName}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-gray-400 text-sm bg-gray-100">No image</div>
+              )}
             </div>
             <DetailRow label="Food Name" value={selectedDonation.foodName} />
             <DetailRow label="Category" value={selectedDonation.category} />

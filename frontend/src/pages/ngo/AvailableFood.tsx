@@ -17,18 +17,18 @@ export default function AvailableFood() {
   const [locationFilter, setLocationFilter] = useState('');
 
   useEffect(() => {
+    setLoading(true);
+    setError(false);
     donationService
-      .getAll()
-      .then((data) => setDonations(data.filter((d) => d.status === 'available' || d.status === 'pending')))
+      .getAll({
+        category: categoryFilter || undefined,
+        location: locationFilter || undefined,
+        availability: 'requestable',
+      })
+      .then((data) => setDonations(data))
       .catch(() => setError(true))
       .finally(() => setLoading(false));
-  }, []);
-
-  const filtered = donations.filter((d) => {
-    if (categoryFilter && d.category !== categoryFilter) return false;
-    if (locationFilter && !d.location.toLowerCase().includes(locationFilter.toLowerCase())) return false;
-    return true;
-  });
+  }, [categoryFilter, locationFilter]);
 
   return (
     <DashboardLayout>
@@ -66,7 +66,7 @@ export default function AvailableFood() {
         <LoadingSpinner label="Loading available food..." />
       ) : error ? (
         <ErrorState message="Failed to load donations. Please try again." onRetry={() => window.location.reload()} />
-      ) : filtered.length === 0 ? (
+      ) : donations.length === 0 ? (
         <EmptyState
           icon={ShoppingBag}
           title="No donations available right now"
@@ -74,7 +74,7 @@ export default function AvailableFood() {
         />
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-          {filtered.map((d) => (
+          {donations.map((d) => (
             <DonationCard key={d.id} donation={d} linkTo={`/food/${d.id}`} showDonor actionLabel="View Details" />
           ))}
         </div>

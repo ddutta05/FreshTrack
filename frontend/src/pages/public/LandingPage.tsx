@@ -1,7 +1,12 @@
 import { Link } from 'react-router-dom';
-import { Leaf, Heart, Package, MapPin, Clock, ArrowRight, ShoppingBag, HandHeart, Truck } from 'lucide-react';
+import { Leaf, Heart, Package, ArrowRight, ShoppingBag, HandHeart, Truck } from 'lucide-react';
 import Footer from '@/components/layout/Footer';
-import { impactStats } from '@/data/mockData';
+
+const impactStats = {
+  donations: 1284,
+  ngos: 96,
+  meals: 15200,
+};
 
 export default function LandingPage() {
   return (

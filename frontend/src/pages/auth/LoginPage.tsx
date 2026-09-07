@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Leaf, Mail, Lock, Eye, EyeOff, UserCircle } from 'lucide-react';
+import { Leaf, Eye, EyeOff, UserCircle } from 'lucide-react';
 import Input from '@/components/common/Input';
 import Select from '@/components/common/Select';
 import Button from '@/components/common/Button';
@@ -128,7 +128,7 @@ const [role, setRole] = useState<UserRole>(
             <p className="text-xs text-gray-600 flex items-start gap-2">
               <UserCircle className="w-4 h-4 text-primary-500 flex-shrink-0 mt-0.5" />
               <span>
-                <strong>gmail accounts:</strong> raj@gmail.com (donor), raha@gmail.com (NGO), admin@gmail.com (admin). 
+                Use your registered account credentials to sign in.
               </span>
             </p>
           </div>
