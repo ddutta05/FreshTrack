@@ -31,6 +31,12 @@ export interface PlatformStats {
   completedRequests: number;
 }
 
+export interface ImpactStats {
+  foodDonations: number;
+  ngosConnected: number;
+  mealsRedistributed: number;
+}
+
 const unwrap = <T,>(payload: unknown): T => {
   if (payload && typeof payload === 'object' && 'data' in payload) {
     const wrapped = payload as {
@@ -106,6 +112,11 @@ export const donationService = {
   async getAll(query?: ListQuery): Promise<Donation[]> {
     const { data } = await api.get(withQuery(API_ENDPOINTS.donations.list, query));
     return unwrap<Donation[]>(data);
+  },
+
+  async getImpactStats(): Promise<ImpactStats> {
+    const { data } = await api.get(API_ENDPOINTS.donations.impactStats);
+    return unwrap<ImpactStats>(data);
   },
 
   async getById(id: string): Promise<Donation> {

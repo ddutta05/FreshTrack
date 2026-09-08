@@ -6,6 +6,7 @@ const { AppError } = require("../utils/errors");
 const { getPagination, toPagination } = require("../utils/pagination");
 const { DONATION_STATUS, USER_ROLES, REQUEST_STATUS } = require("../utils/constants");
 const { toDonationClient, expireDonationsAndNotify } = require("../services/donation.service");
+const { getPublicImpactStats } = require("../services/admin.service");
 const { normalizeStoredImagePath } = require("../utils/imagePath");
 
 function resolveIncomingImage(req) {
@@ -195,11 +196,17 @@ const deleteDonation = asyncHandler(async (req, res) => {
   return success(res, 200, "Donation deleted successfully", null);
 });
 
+const getImpactStats = asyncHandler(async (_req, res) => {
+  const stats = await getPublicImpactStats();
+  return success(res, 200, "Impact stats fetched", stats);
+});
+
 module.exports = {
   listDonations,
   getDonationById,
   getMyDonations,
   createDonation,
   updateDonation,
-  deleteDonation
+  deleteDonation,
+  getImpactStats
 };

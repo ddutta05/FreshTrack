@@ -40,7 +40,7 @@ export default function NgoDashboard() {
     <DashboardLayout>
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-gray-900">
-          Welcome back, {(user?.organizationName || 'NGO').split(' ')[0]}!
+          Welcome back
         </h1>
         <p className="text-gray-500 mt-1">Here's an overview of food available and your requests.</p>
       </div>

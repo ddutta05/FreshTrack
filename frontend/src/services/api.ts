@@ -72,6 +72,7 @@ export const API_ENDPOINTS = {
   },
   donations: {
     list: '/donations',
+    impactStats: '/donations/impact-stats',
     get: (id: string) => `/donations/${id}`,
     create: '/donations',
     update: (id: string) => `/donations/${id}`,

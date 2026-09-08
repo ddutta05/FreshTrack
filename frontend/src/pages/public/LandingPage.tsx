@@ -1,14 +1,33 @@
 import { Link } from 'react-router-dom';
+import { useEffect, useState } from 'react';
 import { Leaf, Heart, Package, ArrowRight, ShoppingBag, HandHeart, Truck } from 'lucide-react';
 import Footer from '@/components/layout/Footer';
+import { donationService } from '@/services/services';
 
-const impactStats = {
-  donations: 1284,
-  ngos: 96,
-  meals: 15200,
+const defaultImpactStats = {
+  donations: 0,
+  ngos: 0,
+  meals: 0,
 };
 
 export default function LandingPage() {
+  const [impactStats, setImpactStats] = useState(defaultImpactStats);
+
+  useEffect(() => {
+    donationService
+      .getImpactStats()
+      .then((stats) => {
+        setImpactStats({
+          donations: stats.foodDonations,
+          ngos: stats.ngosConnected,
+          meals: stats.mealsRedistributed,
+        });
+      })
+      .catch(() => {
+        // Keep existing fallback values to avoid disrupting landing layout.
+      });
+  }, []);
+
   return (
     <div className="min-h-screen flex flex-col bg-white">
       {/* Hero */}
@@ -66,10 +85,7 @@ export default function LandingPage() {
                 <div className="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center flex-shrink-0">
                   <HandHeart className="w-5 h-5 text-primary-600" />
                 </div>
-                <div>
-                  <p className="text-sm font-semibold text-gray-900">15,200+ meals</p>
-                  <p className="text-xs text-gray-500">redistributed</p>
-                </div>
+  
               </div>
             </div>
           </div>
@@ -116,11 +132,11 @@ export default function LandingPage() {
             <p className="text-primary-100 max-w-xl mx-auto">Every donation makes a real difference in the fight against food waste and hunger.</p>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-12">
             {[
               { value: impactStats.donations.toLocaleString(), label: 'Food Donations', icon: Package },
-              { value: impactStats.ngos, label: 'NGOs Connected', icon: Heart },
-              { value: impactStats.meals.toLocaleString(), label: 'Meals Redistributed', icon: HandHeart },
+              { value: impactStats.ngos.toLocaleString(), label: 'NGOs Connected', icon: Heart },
+      
             ].map((stat, i) => (
               <div key={i} className="text-center">
                 <div className="w-16 h-16 rounded-2xl bg-white/15 flex items-center justify-center mx-auto mb-4">
