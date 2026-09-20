@@ -75,7 +75,8 @@ export default function DonationDetails() {
       setDonation(updatedDonation);
       const updatedRequests = await requestService.getByDonation(id!);
       setRequests(updatedRequests);
-      toast('Donation marked as completed!', 'success');
+      const updatedRequest = updatedRequests.find((request) => request.id === acceptedRequest.id);
+      toast(updatedRequest?.status === 'completed' ? 'Completed' : 'Your completion confirmed. Waiting for the other party.', 'success');
     } catch {
       toast('Failed to complete donation. Please try again.', 'error');
     } finally {
@@ -132,7 +133,15 @@ export default function DonationDetails() {
 
               <div className="grid sm:grid-cols-2 gap-4">
                 <InfoRow icon={Tag} label="Category" value={donation.category} />
-                <InfoRow icon={Package} label="Quantity" value={donation.quantity} />
+                <InfoRow
+                  icon={Package}
+                  label="Quantity"
+                  value={
+                    donation.quantityValue !== undefined && donation.quantityUnit
+                      ? `${donation.quantity} (${donation.quantityValue} ${donation.quantityUnit})`
+                      : donation.quantity
+                  }
+                />
                 <InfoRow icon={MapPin} label="Location" value={donation.location} />
                 <InfoRow icon={Clock} label="Available Until" value={new Date(donation.availableUntil).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })} />
                 <InfoRow icon={Calendar} label="Posted Date" value={new Date(donation.createdAt).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })} />
@@ -158,17 +167,13 @@ export default function DonationDetails() {
               </h3>
               <div className="space-y-2 text-sm">
                 <p><span className="text-gray-500">NGO:</span> <span className="font-medium text-gray-900">{acceptedRequest.ngoName}</span></p>
+                {acceptedRequest.ngo?.location && <p><span className="text-gray-500">Location:</span> <span className="text-gray-700">{acceptedRequest.ngo.location}</span></p>}
+                {acceptedRequest.ngo?.acceptedCategories?.length ? <p><span className="text-gray-500">Accepts:</span> <span className="text-gray-700">{acceptedRequest.ngo.acceptedCategories.join(', ')}</span></p> : null}
                 <p><span className="text-gray-500">Message:</span> <span className="text-gray-700">{acceptedRequest.message}</span></p>
                 <p><span className="text-gray-500">Requested:</span> <span className="text-gray-700">{new Date(acceptedRequest.createdAt).toLocaleDateString()}</span></p>
+                {acceptedRequest.contact && <div className="mt-4 border-t border-primary-100 pt-3 text-sm"><p className="font-semibold text-gray-900">Contact & Handoff</p><p className="mt-1 text-gray-600">{acceptedRequest.contact.ngo?.name} {acceptedRequest.contact.ngo?.phone || acceptedRequest.contact.ngo?.email ? `· ${acceptedRequest.contact.ngo.phone || acceptedRequest.contact.ngo.email}` : ''}</p><p className="mt-1 text-gray-600">{acceptedRequest.contact.handoffMessage}</p></div>}
               </div>
-              <Button
-                variant="success"
-                className="w-full mt-4"
-                onClick={handleComplete}
-                disabled={actionLoading}
-              >
-                {actionLoading ? 'Processing...' : 'Mark as Completed'}
-              </Button>
+              {acceptedRequest.donorCompletedAt ? <p className="mt-4 text-sm text-gray-600">Your completion confirmed. Waiting for the other party.</p> : <Button variant="success" className="w-full mt-4" onClick={handleComplete} disabled={actionLoading}>{actionLoading ? 'Processing...' : 'Mark as Completed'}</Button>}
             </div>
           )}
 
@@ -185,6 +190,8 @@ export default function DonationDetails() {
                       <StatusBadge status={req.status} type="request" />
                     </div>
                     <p className="text-sm text-gray-600 mb-2">{req.message}</p>
+                    {req.ngo?.location && <p className="text-xs text-gray-500 mb-1">Location: {req.ngo.location}</p>}
+                    {req.ngo?.acceptedCategories?.length ? <p className="text-xs text-gray-500 mb-3">Accepts: {req.ngo.acceptedCategories.join(', ')}</p> : null}
                     <p className="text-xs text-gray-400 mb-3">
                       {new Date(req.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                     </p>
@@ -198,6 +205,7 @@ export default function DonationDetails() {
                         </Button>
                       </div>
                     )}
+                    {req.status !== 'rejected' && <Link to={`/ngos/${req.ngoId}`} className="mt-2 inline-flex text-sm font-medium text-primary-700 hover:text-primary-800">View NGO Profile</Link>}
                   </div>
                 ))}
               </div>

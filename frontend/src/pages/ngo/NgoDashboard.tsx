@@ -6,31 +6,34 @@ import DashboardCard from '@/components/donation/DashboardCard';
 import DonationCard from '@/components/donation/DonationCard';
 import { LoadingSpinner, EmptyState, ErrorState } from '@/components/common/LoadingSpinner';
 import { useAuth } from '@/context/AuthContext';
-import { donationService, requestService } from '@/services/services';
-import type { Donation, DonationRequest } from '@/types';
+import { donationService, offerService, requestService } from '@/services/services';
+import type { Donation, DonationOffer, DonationRequest } from '@/types';
 
 export default function NgoDashboard() {
   const { user } = useAuth();
   const [donations, setDonations] = useState<Donation[]>([]);
   const [myRequests, setMyRequests] = useState<DonationRequest[]>([]);
+  const [offers, setOffers] = useState<DonationOffer[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
   useEffect(() => {
     if (!user) return;
-    Promise.all([donationService.getAll(), requestService.getByNGO(user.id)])
-      .then(([d, r]) => {
+    Promise.all([donationService.getAll(), requestService.getByNGO(user.id), offerService.getReceived()])
+      .then(([d, r, o]) => {
         setDonations(d);
         setMyRequests(r);
+        setOffers(o);
       })
       .catch(() => setError(true))
       .finally(() => setLoading(false));
   }, [user]);
 
   const availableCount = donations.filter((d) => d.status === 'available' || d.status === 'pending').length;
-  const myRequestsCount = myRequests.filter((r) => r.status === 'pending').length;
-  const acceptedCount = myRequests.filter((r) => r.status === 'accepted').length;
-  const completedCount = myRequests.filter((r) => r.status === 'completed').length;
+  const myRequestsCount = myRequests.length;
+  const offersReceived = offers.length;
+  const acceptedCount = myRequests.filter((record) => record.status === 'accepted').length + offers.filter((record) => record.status === 'accepted').length;
+  const completedCount = myRequests.filter((record) => record.status === 'completed').length + offers.filter((record) => record.status === 'completed').length;
   const recentAvailable = donations
     .filter((d) => d.status === 'available' || d.status === 'pending')
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
@@ -46,9 +49,10 @@ export default function NgoDashboard() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
         <DashboardCard icon={<ShoppingBag className="w-6 h-6" />} label="Available Donations" value={availableCount} color="primary" />
         <DashboardCard icon={<ClipboardList className="w-6 h-6" />} label="My Requests" value={myRequestsCount} color="amber" />
+        <DashboardCard icon={<Package className="w-6 h-6" />} label="Offers Received" value={offersReceived} color="primary" />
         <DashboardCard icon={<Package className="w-6 h-6" />} label="Accepted Donations" value={acceptedCount} color="blue" />
         <DashboardCard icon={<CheckCircle2 className="w-6 h-6" />} label="Completed Pickups" value={completedCount} color="gray" />
       </div>

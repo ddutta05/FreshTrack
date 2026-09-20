@@ -31,6 +31,9 @@ async function registerUser(payload) {
     role: payload.role,
     phone: payload.phone,
     organizationName: payload.role === USER_ROLES.NGO ? normalizedOrgName : undefined,
+    location: payload.role === USER_ROLES.NGO ? payload.location.trim() : undefined,
+    geoLocation: payload.role === USER_ROLES.NGO ? payload.geoLocation : undefined,
+    acceptedCategories: payload.role === USER_ROLES.NGO ? payload.acceptedCategories : undefined,
     status: USER_STATUS.ACTIVE
   });
 

@@ -7,7 +7,7 @@ import { disconnectSocket } from '@/services/socket';
 interface AuthContextValue {
   user: User | null;
   loading: boolean;
-  login: (email: string, password: string, role: UserRole) => Promise<User>;
+  login: (email: string, password: string, role: UserRole, rememberMe?: boolean) => Promise<User>;
   register: (payload: {
     name?: string;
     email: string;
@@ -22,6 +22,12 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
+function clearChatStorage() {
+  Object.keys(sessionStorage)
+    .filter((key) => key.startsWith('freshtrack_ai_chat_'))
+    .forEach((key) => sessionStorage.removeItem(key));
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -29,6 +35,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     setUnauthorizedHandler(() => {
       authService.logout();
+      clearChatStorage();
       disconnectSocket();
       setUser(null);
 
@@ -43,7 +50,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const restoreSession = async () => {
-      const token = localStorage.getItem('freshtrack_token');
+      const token = localStorage.getItem('freshtrack_token') || sessionStorage.getItem('freshtrack_token');
       if (!token) {
         setLoading(false);
         return;
@@ -52,7 +59,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const currentUser = await authService.me();
         setUser(currentUser);
-        localStorage.setItem('freshtrack_user', JSON.stringify(currentUser));
+        const storage = localStorage.getItem('freshtrack_token') ? localStorage : sessionStorage;
+        storage.setItem('freshtrack_user', JSON.stringify(currentUser));
       } catch {
         authService.logout();
         disconnectSocket();
@@ -65,8 +73,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     restoreSession();
   }, []);
 
-  const login = useCallback(async (email: string, password: string, role: UserRole) => {
-    const user = await authService.login(email, password, role);
+  const login = useCallback(async (email: string, password: string, role: UserRole, rememberMe = false) => {
+    const user = await authService.login(email, password, role, rememberMe);
     setUser(user);
     return user;
   }, []);
@@ -78,6 +86,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(() => {
+    clearChatStorage();
     authService.logout();
     disconnectSocket();
     setUser(null);
@@ -85,7 +94,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const updateUser = useCallback((updatedUser: User) => {
     setUser(updatedUser);
-    localStorage.setItem('freshtrack_user', JSON.stringify(updatedUser));
+    const storage = localStorage.getItem('freshtrack_token') ? localStorage : sessionStorage;
+    storage.setItem('freshtrack_user', JSON.stringify(updatedUser));
   }, []);
 
   return (

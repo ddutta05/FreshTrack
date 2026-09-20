@@ -74,7 +74,7 @@ export default function FoodDetails() {
   if (error || !donation) {
     return (
       <DashboardLayout>
-        <ErrorState message="Food listing not found or failed to load." onRetry={() => navigate(-1)} />
+        <ErrorState message="This donation is no longer available." onRetry={() => navigate(-1)} />
       </DashboardLayout>
     );
   }
@@ -112,7 +112,15 @@ export default function FoodDetails() {
 
               <div className="grid sm:grid-cols-2 gap-4">
                 <InfoRow icon={Tag} label="Category" value={donation.category} />
-                <InfoRow icon={Package} label="Quantity" value={donation.quantity} />
+                <InfoRow
+                  icon={Package}
+                  label="Quantity"
+                  value={
+                    donation.quantityValue !== undefined && donation.quantityUnit
+                      ? `${donation.quantity} (${donation.quantityValue} ${donation.quantityUnit})`
+                      : donation.quantity
+                  }
+                />
                 <InfoRow icon={MapPin} label="Location" value={donation.location} />
                 <InfoRow icon={Clock} label="Available Until" value={new Date(donation.availableUntil).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })} />
                 <InfoRow icon={Calendar} label="Posted Date" value={new Date(donation.createdAt).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })} />

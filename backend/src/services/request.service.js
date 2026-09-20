@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 const Donation = require("../models/Donation");
 const DonationRequest = require("../models/DonationRequest");
+const DonationOffer = require("../models/DonationOffer");
 const User = require("../models/User");
 const { AppError } = require("../utils/errors");
 const {
@@ -15,32 +16,85 @@ const { expireDonationsAndNotify } = require("./donation.service");
 const { normalizeStoredImagePath } = require("../utils/imagePath");
 
 function toRequestClient(reqDoc) {
+  const donation = reqDoc.donationId && reqDoc.donationId.foodName ? reqDoc.donationId : null;
+  const donor = reqDoc.donorId?._id ? reqDoc.donorId : null;
+  const ngo = reqDoc.ngoId?._id ? reqDoc.ngoId : null;
   return {
     id: reqDoc._id.toString(),
-    donationId: reqDoc.donationId?._id ? reqDoc.donationId._id.toString() : reqDoc.donationId.toString(),
-    ngoId: reqDoc.ngoId?._id ? reqDoc.ngoId._id.toString() : reqDoc.ngoId.toString(),
-    ngoName: reqDoc.ngoId?.organizationName || reqDoc.ngoName || reqDoc.ngoId?.name || "NGO",
+    donationId: donation?._id ? donation._id.toString() : reqDoc.donationId ? reqDoc.donationId.toString() : undefined,
+    donorId: donor?._id ? donor._id.toString() : reqDoc.donorId ? reqDoc.donorId.toString() : donation?.donorId?._id?.toString(),
+    donorName: donor?.name || donation?.donorId?.name,
+    ngoId: ngo?._id ? ngo._id.toString() : reqDoc.ngoId.toString(),
+    ngoName: ngo?.organizationName || reqDoc.ngoName || ngo?.name || "NGO",
+    ngo: ngo ? {
+      id: ngo._id.toString(),
+      name: ngo.name,
+      organizationName: ngo.organizationName,
+      location: ngo.location || "",
+      acceptedCategories: ngo.acceptedCategories || [],
+      currentNeedDescription: ngo.currentNeedDescription || "",
+      isAcceptingDonations: ngo.isAcceptingDonations !== false,
+      operatingRadiusKm: ngo.operatingRadiusKm
+    } : undefined,
+    contact: ["accepted", "completed"].includes(reqDoc.status) ? {
+      donor: donor ? { name: donor.name, phone: donor.phone, email: donor.email } : undefined,
+      ngo: ngo ? { name: ngo.organizationName || ngo.name, phone: ngo.phone, email: ngo.email, location: ngo.location || "" } : undefined,
+      handoffMessage: "Contact the other party to arrange pickup or drop-off. After the food is handed over, both sides should confirm completion."
+    } : undefined,
+    direction: reqDoc.direction || "ngo_request",
     message: reqDoc.message,
     status: reqDoc.status,
+    donorCompletedAt: reqDoc.donorCompletedAt,
+    ngoCompletedAt: reqDoc.ngoCompletedAt,
     createdAt: reqDoc.createdAt,
     updatedAt: reqDoc.updatedAt,
-    donation: reqDoc.donationId && reqDoc.donationId.foodName
+    donation: donation
       ? {
-          id: reqDoc.donationId._id.toString(),
-          foodName: reqDoc.donationId.foodName,
-          category: reqDoc.donationId.category,
-          quantity: reqDoc.donationId.quantity,
-          description: reqDoc.donationId.description,
-          image: normalizeStoredImagePath(reqDoc.donationId.image),
-          location: reqDoc.donationId.location,
-          availableUntil: reqDoc.donationId.availableUntil,
-          donorId: reqDoc.donationId.donorId?._id ? reqDoc.donationId.donorId._id.toString() : reqDoc.donationId.donorId.toString(),
-          donorName: reqDoc.donationId.donorId?.name || "Unknown",
-          status: reqDoc.donationId.status,
-          createdAt: reqDoc.donationId.createdAt
+          id: donation._id.toString(),
+          foodName: donation.foodName,
+          category: donation.category,
+          quantity: donation.quantity,
+          quantityValue: donation.quantityValue,
+          quantityUnit: donation.quantityUnit,
+          description: donation.description,
+          image: normalizeStoredImagePath(donation.image),
+          location: donation.location,
+          availableUntil: donation.availableUntil,
+          donorId: donation.donorId?._id ? donation.donorId._id.toString() : donation.donorId.toString(),
+          donorName: donation.donorId?.name || "Unknown",
+          status: donation.status,
+          createdAt: donation.createdAt
         }
       : undefined
   };
+}
+
+async function createDirectOffer({ donorId, ngoId, foodName, category, quantity, description, location, availableUntil, message }) {
+  const ngo = await User.findById(ngoId).select("role status");
+  if (!ngo || ngo.role !== USER_ROLES.NGO || ngo.status === "disabled") {
+    throw new AppError("NGO not found", 404, "NGO_NOT_FOUND");
+  }
+
+  const offer = await DonationOffer.create({
+    donorId,
+    ngoId,
+    foodName,
+    category,
+    quantity,
+    description: description || message || `Direct offer of ${foodName}`,
+    location: location || "To arrange with the NGO",
+    availableUntil: availableUntil ? new Date(availableUntil) : new Date(Date.now() + 24 * 60 * 60 * 1000),
+    message: message || "",
+    status: REQUEST_STATUS.PENDING
+  });
+
+  await createNotification({
+    userId: ngoId,
+    type: NOTIFICATION_TYPES.REQUEST_RECEIVED,
+    message: `A donor offered ${quantity} of ${foodName}.`,
+    requestId: offer._id
+  });
+  return offer;
 }
 
 async function createRequest({ donationId, message, ngoUserId }) {
@@ -88,6 +142,8 @@ async function createRequest({ donationId, message, ngoUserId }) {
       [
         {
           donationId,
+          donorId: donation.donorId,
+          direction: "ngo_request",
           ngoId: ngoUserId,
           message: message || "",
           status: REQUEST_STATUS.PENDING
@@ -125,24 +181,26 @@ async function transitionRequest({ requestId, action, actorId, actorRole }) {
     await expireDonationsAndNotify(session);
 
     const request = await DonationRequest.findById(requestId)
-      .populate("ngoId", "name organizationName role")
+      .populate("ngoId", "name organizationName location acceptedCategories currentNeedDescription isAcceptingDonations operatingRadiusKm role")
       .session(session);
 
     if (!request) {
       throw new AppError("Request not found", 404, "REQUEST_NOT_FOUND");
     }
 
-    const donation = await Donation.findById(request.donationId).session(session);
-    if (!donation) {
-      throw new AppError("Donation not found", 404, "DONATION_NOT_FOUND");
-    }
+    const donation = request.donationId ? await Donation.findById(request.donationId).session(session) : null;
+    if (request.donationId && !donation) throw new AppError("Donation not found", 404, "DONATION_NOT_FOUND");
 
-    const isDonorOwner = donation.donorId.toString() === actorId;
+    const donorId = donation?.donorId?.toString() || request.donorId?.toString();
+    const isDonorOwner = donorId === actorId;
     const isNgoOwner = request.ngoId._id.toString() === actorId;
 
     if (action === "accept" || action === "reject") {
-      if (!isDonorOwner || actorRole !== USER_ROLES.DONOR) {
-        throw new AppError("Only owning donor can perform this action", 403, "FORBIDDEN");
+      const authorized = request.direction === "donor_offer"
+        ? isNgoOwner && actorRole === USER_ROLES.NGO
+        : isDonorOwner && actorRole === USER_ROLES.DONOR;
+      if (!authorized) {
+        throw new AppError("Only the related party can perform this action", 403, "FORBIDDEN");
       }
       if (request.status !== REQUEST_STATUS.PENDING) {
         throw new AppError("Only pending requests can be accepted or rejected", 409, "INVALID_REQUEST_STATE");
@@ -153,6 +211,10 @@ async function transitionRequest({ requestId, action, actorId, actorRole }) {
       if (!(isDonorOwner || isNgoOwner)) {
         throw new AppError("Only related donor or NGO can complete", 403, "FORBIDDEN");
       }
+      if (request.status === REQUEST_STATUS.COMPLETED) {
+        await session.commitTransaction();
+        return request;
+      }
       if (request.status !== REQUEST_STATUS.ACCEPTED) {
         throw new AppError("Only accepted requests can be completed", 409, "INVALID_REQUEST_STATE");
       }
@@ -160,29 +222,28 @@ async function transitionRequest({ requestId, action, actorId, actorRole }) {
 
     if (action === "accept") {
       request.status = REQUEST_STATUS.ACCEPTED;
-      donation.status = DONATION_STATUS.ACCEPTED;
-
       await request.save({ session });
-      await donation.save({ session });
+      if (donation) {
+        donation.status = DONATION_STATUS.ACCEPTED;
+        await donation.save({ session });
+      }
 
-      await DonationRequest.updateMany(
-        {
-          donationId: donation._id,
-          _id: { $ne: request._id },
-          status: REQUEST_STATUS.PENDING
-        },
-        {
-          $set: { status: REQUEST_STATUS.REJECTED }
-        },
-        { session }
-      );
+      if (donation) {
+        await DonationRequest.updateMany(
+          { donationId: donation._id, _id: { $ne: request._id }, status: REQUEST_STATUS.PENDING },
+          { $set: { status: REQUEST_STATUS.REJECTED } },
+          { session }
+        );
+      }
 
       await createNotification(
         {
           userId: request.ngoId._id,
           type: NOTIFICATION_TYPES.REQUEST_ACCEPTED,
-          message: `Your request for \"${donation.foodName}\" was accepted.`,
-          donationId: donation._id,
+          message: request.direction === "donor_offer"
+            ? "Your donation offer was accepted."
+            : `Your request for \"${donation.foodName}\" was accepted.`,
+          ...(donation ? { donationId: donation._id } : {}),
           requestId: request._id
         },
         session
@@ -193,27 +254,21 @@ async function transitionRequest({ requestId, action, actorId, actorRole }) {
       request.status = REQUEST_STATUS.REJECTED;
       await request.save({ session });
 
-      const pendingCount = await DonationRequest.countDocuments({
-        donationId: donation._id,
-        status: REQUEST_STATUS.PENDING
-      }).session(session);
-
-      const acceptedCount = await DonationRequest.countDocuments({
-        donationId: donation._id,
-        status: REQUEST_STATUS.ACCEPTED
-      }).session(session);
-
-      if (acceptedCount === 0 && pendingCount === 0 && donation.status !== DONATION_STATUS.EXPIRED) {
-        donation.status = DONATION_STATUS.AVAILABLE;
-        await donation.save({ session });
+      if (donation) {
+        const pendingCount = await DonationRequest.countDocuments({ donationId: donation._id, status: REQUEST_STATUS.PENDING }).session(session);
+        const acceptedCount = await DonationRequest.countDocuments({ donationId: donation._id, status: REQUEST_STATUS.ACCEPTED }).session(session);
+        if (acceptedCount === 0 && pendingCount === 0 && donation.status !== DONATION_STATUS.EXPIRED) {
+          donation.status = DONATION_STATUS.AVAILABLE;
+          await donation.save({ session });
+        }
       }
 
       await createNotification(
         {
           userId: request.ngoId._id,
           type: NOTIFICATION_TYPES.REQUEST_REJECTED,
-          message: `Your request for \"${donation.foodName}\" was rejected.`,
-          donationId: donation._id,
+          message: request.direction === "donor_offer" ? "Your donation offer was declined." : `Your request for \"${donation.foodName}\" was rejected.`,
+          ...(donation ? { donationId: donation._id } : {}),
           requestId: request._id
         },
         session
@@ -221,48 +276,33 @@ async function transitionRequest({ requestId, action, actorId, actorRole }) {
     }
 
     if (action === "complete") {
-      request.status = REQUEST_STATUS.COMPLETED;
-      donation.status = DONATION_STATUS.COMPLETED;
+      if (actorRole === USER_ROLES.DONOR) request.donorCompletedAt = request.donorCompletedAt || new Date();
+      if (actorRole === USER_ROLES.NGO) request.ngoCompletedAt = request.ngoCompletedAt || new Date();
+      const fullyConfirmed = request.donorCompletedAt && request.ngoCompletedAt;
+      if (fullyConfirmed) request.status = REQUEST_STATUS.COMPLETED;
       await request.save({ session });
-      await donation.save({ session });
+      if (fullyConfirmed && donation) {
+        donation.status = DONATION_STATUS.COMPLETED;
+        await donation.save({ session });
+        await DonationRequest.updateMany(
+          { donationId: donation._id, _id: { $ne: request._id }, status: REQUEST_STATUS.PENDING },
+          { $set: { status: REQUEST_STATUS.REJECTED } },
+          { session }
+        );
+      }
 
-      await DonationRequest.updateMany(
-        {
-          donationId: donation._id,
-          _id: { $ne: request._id },
-          status: REQUEST_STATUS.PENDING
-        },
-        { $set: { status: REQUEST_STATUS.REJECTED } },
-        { session }
-      );
-
-      await createNotification(
-        {
-          userId: donation.donorId,
-          type: NOTIFICATION_TYPES.DONATION_COMPLETED,
-          message: `Donation \"${donation.foodName}\" was marked completed.`,
-          donationId: donation._id,
-          requestId: request._id
-        },
-        session
-      );
-
-      await createNotification(
-        {
-          userId: request.ngoId._id,
-          type: NOTIFICATION_TYPES.DONATION_COMPLETED,
-          message: `Pickup for \"${donation.foodName}\" was marked completed.`,
-          donationId: donation._id,
-          requestId: request._id
-        },
-        session
-      );
+      if (fullyConfirmed) {
+        const completionMessage = donation ? `Donation \"${donation.foodName}\" was completed by both parties.` : "Donation offer was completed by both parties.";
+        await createNotification({ userId: donorId, type: NOTIFICATION_TYPES.DONATION_COMPLETED, message: completionMessage, ...(donation ? { donationId: donation._id } : {}), requestId: request._id }, session);
+        await createNotification({ userId: request.ngoId._id, type: NOTIFICATION_TYPES.DONATION_COMPLETED, message: completionMessage, ...(donation ? { donationId: donation._id } : {}), requestId: request._id }, session);
+      }
     }
 
     await session.commitTransaction();
 
     const refreshed = await DonationRequest.findById(request._id)
-      .populate("ngoId", "name organizationName")
+      .populate("ngoId", "name organizationName location acceptedCategories currentNeedDescription isAcceptingDonations operatingRadiusKm phone email")
+      .populate("donorId", "name phone email")
       .populate({
         path: "donationId",
         populate: { path: "donorId", select: "name" }
@@ -280,5 +320,6 @@ async function transitionRequest({ requestId, action, actorId, actorRole }) {
 module.exports = {
   toRequestClient,
   createRequest,
+  createDirectOffer,
   transitionRequest
 };

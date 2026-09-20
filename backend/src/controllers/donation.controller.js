@@ -1,13 +1,17 @@
 const Donation = require("../models/Donation");
 const DonationRequest = require("../models/DonationRequest");
+const User = require("../models/User");
 const asyncHandler = require("../utils/asyncHandler");
 const { success, paginated } = require("../utils/apiResponse");
 const { AppError } = require("../utils/errors");
 const { getPagination, toPagination } = require("../utils/pagination");
 const { DONATION_STATUS, USER_ROLES, REQUEST_STATUS } = require("../utils/constants");
 const { toDonationClient, expireDonationsAndNotify } = require("../services/donation.service");
+const { createOffer, toOfferClient } = require("../services/offer.service");
 const { getPublicImpactStats } = require("../services/admin.service");
 const { normalizeStoredImagePath } = require("../utils/imagePath");
+const { parseGeoLocation } = require("../validators/geo.validator");
+const { createNotification } = require("../services/notification.service");
 
 function resolveIncomingImage(req) {
   if (req.file?.filename) {
@@ -32,6 +36,10 @@ const listDonations = asyncHandler(async (req, res) => {
   const { page, limit, skip } = getPagination(req.query);
   const filter = {};
 
+  if (!req.user) {
+    filter.targetNgoId = { $exists: false };
+  }
+
   if (req.query.category) {
     filter.category = req.query.category;
   }
@@ -47,6 +55,11 @@ const listDonations = asyncHandler(async (req, res) => {
 
   if (req.user?.role === USER_ROLES.NGO && !req.query.status) {
     filter.status = { $in: [DONATION_STATUS.AVAILABLE, DONATION_STATUS.PENDING] };
+    filter.$or = [{ targetNgoId: { $exists: false } }, { targetNgoId: req.user.id }];
+  }
+
+  if (req.user?.role === USER_ROLES.DONOR) {
+    filter.targetNgoId = { $exists: false };
   }
 
   if (req.query.availability === "requestable") {
@@ -79,8 +92,12 @@ const listDonations = asyncHandler(async (req, res) => {
 const getDonationById = asyncHandler(async (req, res) => {
   await expireDonationsAndNotify();
 
-  const donation = await Donation.findById(req.params.id).populate("donorId", "name");
+  const donation = await Donation.findById(req.params.id).populate("donorId", "name phone email").populate("targetNgoId", "name organizationName");
   if (!donation) {
+    throw new AppError("Donation not found", 404, "DONATION_NOT_FOUND");
+  }
+  const isParticipant = req.user && (donation.donorId._id?.toString() === req.user.id || donation.targetNgoId?._id?.toString() === req.user.id);
+  if (donation.targetNgoId && !isParticipant && req.user?.role !== USER_ROLES.ADMIN) {
     throw new AppError("Donation not found", 404, "DONATION_NOT_FOUND");
   }
 
@@ -98,10 +115,13 @@ const getMyDonations = asyncHandler(async (req, res) => {
 
   const [total, items] = await Promise.all([
     Donation.countDocuments(filter),
-    Donation.find(filter).populate("donorId", "name").sort({ createdAt: -1 }).skip(skip).limit(limit)
+    Donation.find(filter).populate("donorId", "name").populate("targetNgoId", "name organizationName").sort({ createdAt: -1 }).skip(skip).limit(limit)
   ]);
 
   const mapped = items.map(toDonationClient);
+  const offerRequests = await DonationRequest.find({ donationId: { $in: items.map((item) => item._id) }, direction: "donor_offer" }).select("donationId status");
+  const offerStatus = new Map(offerRequests.map((request) => [request.donationId.toString(), request.status]));
+  mapped.forEach((item) => { if (item.targetNgoId) item.offerStatus = offerStatus.get(item.id) || "pending"; });
   const pagination = toPagination(page, limit, total);
 
   if (req.query.page || req.query.limit) {
@@ -119,7 +139,27 @@ const createDonation = asyncHandler(async (req, res) => {
 
   const imagePath = resolveIncomingImage(req);
 
-  const donation = await Donation.create({
+  let geoLocation = parseGeoLocation(req.body.geoLocation);
+  if (!geoLocation || !geoLocation.coordinates) {
+    // If not explicitly provided, check authenticated donor's User.geoLocation
+    const donorUser = await User.findById(req.user.id);
+    if (donorUser?.geoLocation?.coordinates && donorUser.geoLocation.coordinates.length === 2) {
+      geoLocation = {
+        type: donorUser.geoLocation.type || "Point",
+        coordinates: donorUser.geoLocation.coordinates
+      };
+    } else {
+      geoLocation = undefined;
+    }
+  }
+
+  const quantityValue =
+    req.body.quantityValue !== undefined && req.body.quantityValue !== null && req.body.quantityValue !== ""
+      ? Number(req.body.quantityValue)
+      : undefined;
+  const quantityUnit = req.body.quantityUnit || undefined;
+
+  const donationData = {
     foodName: req.body.foodName,
     category: req.body.category,
     quantity: req.body.quantity,
@@ -129,9 +169,45 @@ const createDonation = asyncHandler(async (req, res) => {
     availableUntil,
     donorId: req.user.id,
     status: DONATION_STATUS.AVAILABLE
-  });
+  };
 
-  const created = await Donation.findById(donation._id).populate("donorId", "name");
+  if (geoLocation) {
+    donationData.geoLocation = geoLocation;
+  }
+  if (quantityValue !== undefined && !Number.isNaN(quantityValue)) {
+    donationData.quantityValue = quantityValue;
+  }
+  if (quantityUnit) {
+    donationData.quantityUnit = quantityUnit;
+  }
+
+  if (req.body.targetNgoId) {
+    const offer = await createOffer({
+      donorId: req.user.id,
+      ngoId: req.body.targetNgoId,
+      foodName: req.body.foodName,
+      category: req.body.category,
+      quantity: req.body.quantity,
+      quantityValue: req.body.quantityValue,
+      quantityUnit: req.body.quantityUnit,
+      description: req.body.description,
+      image: imagePath,
+      location: req.body.location,
+      geoLocation: geoLocation || undefined,
+      availableUntil: req.body.availableUntil,
+      message: req.body.offerMessage || req.body.message || "Direct donation offer"
+    });
+
+    const hydrated = await require("../models/DonationOffer").findById(offer._id)
+      .populate("donorId", "name phone email")
+      .populate("ngoId", "name organizationName location acceptedCategories currentNeedDescription isAcceptingDonations operatingRadiusKm phone email");
+
+    return success(res, 201, "Donation offer created successfully", toOfferClient(hydrated));
+  }
+
+  const donation = await Donation.create(donationData);
+
+  const created = await Donation.findById(donation._id).populate("donorId", "name").populate("targetNgoId", "name organizationName");
   return success(res, 201, "Donation created successfully", toDonationClient(created));
 });
 
@@ -164,6 +240,20 @@ const updateDonation = asyncHandler(async (req, res) => {
     if (req.body[field] !== undefined) {
       donation[field] = req.body[field];
     }
+  }
+
+  if (req.body.geoLocation !== undefined) {
+    const parsedGeo = parseGeoLocation(req.body.geoLocation);
+    donation.geoLocation = parsedGeo || undefined;
+  }
+
+  if (req.body.quantityValue !== undefined) {
+    const val = req.body.quantityValue;
+    donation.quantityValue = val !== null && val !== "" ? Number(val) : undefined;
+  }
+
+  if (req.body.quantityUnit !== undefined) {
+    donation.quantityUnit = req.body.quantityUnit || undefined;
   }
 
   const imagePath = resolveIncomingImage(req);

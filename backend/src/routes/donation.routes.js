@@ -8,7 +8,7 @@ const {
   deleteDonation,
   getImpactStats
 } = require("../controllers/donation.controller");
-const { requireAuth } = require("../middleware/auth.middleware");
+const { requireAuth, optionalAuth } = require("../middleware/auth.middleware");
 const { requireRole } = require("../middleware/role.middleware");
 const { validate } = require("../middleware/validation.middleware");
 const { upload } = require("../middleware/upload.middleware");
@@ -25,7 +25,7 @@ const router = express.Router();
 router.get("/", donationListValidator, validate, listDonations);
 router.get("/impact-stats", getImpactStats);
 router.get("/mine", requireAuth, requireRole(USER_ROLES.DONOR), donationListValidator, validate, getMyDonations);
-router.get("/:id", donationIdParamValidator, validate, getDonationById);
+router.get("/:id", optionalAuth, donationIdParamValidator, validate, getDonationById);
 router.post("/", requireAuth, requireRole(USER_ROLES.DONOR), upload.single("image"), createDonationValidator, validate, createDonation);
 router.put("/:id", requireAuth, upload.single("image"), updateDonationValidator, validate, updateDonation);
 router.delete("/:id", requireAuth, donationIdParamValidator, validate, deleteDonation);

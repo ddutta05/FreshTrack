@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import Navbar from './Navbar';
 import Footer from './Footer';
+import FreshTrackAssistant from '@/components/common/FreshTrackAssistant';
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -14,6 +15,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         {children}
       </main>
       <Footer />
+      <FreshTrackAssistant />
     </div>
   );
 }

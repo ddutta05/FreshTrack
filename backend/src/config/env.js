@@ -50,7 +50,8 @@ const env = {
   expirySweepIntervalMs: Number(process.env.EXPIRY_SWEEP_INTERVAL_MS || 60000),
   adminName: process.env.ADMIN_NAME || "",
   adminEmail: (process.env.ADMIN_EMAIL || "").toLowerCase(),
-  adminPassword: process.env.ADMIN_PASSWORD || ""
+  adminPassword: process.env.ADMIN_PASSWORD || "",
+  groqApiKey: process.env.GROQ_API_KEY || ""
 };
 
 module.exports = env;

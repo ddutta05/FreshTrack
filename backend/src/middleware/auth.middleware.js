@@ -41,5 +41,19 @@ async function requireAuth(req, _res, next) {
 }
 
 module.exports = {
-  requireAuth
+  requireAuth,
+  optionalAuth: async function optionalAuth(req, _res, next) {
+    const authHeader = req.headers.authorization || "";
+    const [scheme, token] = authHeader.split(" ");
+    if (scheme !== "Bearer" || !token) return next();
+    try {
+      const payload = jwt.verify(token, env.jwtSecret);
+      const userId = payload.userId || payload.sub;
+      const user = await User.findById(userId);
+      if (user) req.user = { id: user._id.toString(), role: user.role, status: user.status };
+    } catch (_error) {
+      // Treat an absent/invalid optional token as anonymous access.
+    }
+    return next();
+  }
 };

@@ -25,6 +25,8 @@ export function setUnauthorizedHandler(handler: (() => void) | null) {
 export function clearAuthStorage() {
   localStorage.removeItem('freshtrack_token');
   localStorage.removeItem('freshtrack_user');
+  sessionStorage.removeItem('freshtrack_token');
+  sessionStorage.removeItem('freshtrack_user');
 }
 
 export const api = axios.create({
@@ -33,7 +35,7 @@ export const api = axios.create({
 
 // Attach auth token to every request
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('freshtrack_token');
+  const token = localStorage.getItem('freshtrack_token') || sessionStorage.getItem('freshtrack_token');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -69,6 +71,7 @@ export const API_ENDPOINTS = {
     update: (id: string) => `/users/${id}`,
     disable: (id: string) => `/users/${id}/disable`,
     enable: (id: string) => `/users/${id}/enable`,
+    ngo: (id: string) => `/users/ngos/${id}`,
   },
   donations: {
     list: '/donations',
@@ -88,6 +91,16 @@ export const API_ENDPOINTS = {
     reject: (id: string) => `/requests/${id}/reject`,
     complete: (id: string) => `/requests/${id}/complete`,
   },
+  offers: {
+    list: '/offers',
+    mine: '/offers/mine',
+    received: '/offers/received',
+    get: (id: string) => `/offers/${id}`,
+    create: '/offers',
+    accept: (id: string) => `/offers/${id}/accept`,
+    reject: (id: string) => `/offers/${id}/reject`,
+    complete: (id: string) => `/offers/${id}/complete`,
+  },
   notifications: {
     list: '/notifications',
     unreadCount: '/notifications/unread-count',
@@ -97,5 +110,11 @@ export const API_ENDPOINTS = {
   admin: {
     stats: '/admin/stats',
     donations: '/admin/donations',
+  },
+  ai: {
+    chat: '/ai/chat',
+  },
+  recommendations: {
+    ngosBrowse: '/recommendations/ngos/browse',
   },
 };

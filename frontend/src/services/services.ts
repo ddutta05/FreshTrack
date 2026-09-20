@@ -1,5 +1,5 @@
 import { api, API_ENDPOINTS, clearAuthStorage } from './api';
-import type { User, Donation, DonationRequest, Notification, UserRole, DonationStatus } from '@/types';
+import type { User, Donation, DonationRequest, DonationOffer, Notification, UserRole, DonationStatus, GeoPoint, ChatRequest, ChatResponse, NgoProfile, NgoBrowseResult } from '@/types';
 
 export interface ListQuery {
   page?: number;
@@ -12,6 +12,33 @@ export interface ListQuery {
   sortOrder?: 'asc' | 'desc';
   availability?: 'requestable';
   donationId?: string;
+}
+
+export interface CreateDonationPayload {
+  foodName: string;
+  category: string;
+  quantity: string;
+  quantityValue?: number;
+  quantityUnit?: string;
+  description: string;
+  location: string;
+  geoLocation?: GeoPoint | null;
+  availableUntil: string;
+  imageFile?: File;
+  targetNgoId?: string;
+  offerMessage?: string;
+}
+
+export interface UpdateProfilePayload {
+  name?: string;
+  phone?: string;
+  organizationName?: string;
+  location?: string;
+  geoLocation?: GeoPoint | null;
+  acceptedCategories?: string[];
+  operatingRadiusKm?: number | null;
+  isAcceptingDonations?: boolean;
+  currentNeedDescription?: string;
 }
 
 export interface PlatformStats {
@@ -69,11 +96,12 @@ const withQuery = (path: string, query?: ListQuery) => {
 
 // ===== AUTH =====
 export const authService = {
-  async login(email: string, password: string, role: UserRole): Promise<User> {
+  async login(email: string, password: string, role: UserRole, rememberMe = false): Promise<User> {
     const { data } = await api.post(API_ENDPOINTS.auth.login, { email, password, role });
     const result = unwrap<{ token: string; user: User }>(data);
-    localStorage.setItem('freshtrack_token', result.token);
-    localStorage.setItem('freshtrack_user', JSON.stringify(result.user));
+    const storage = rememberMe ? localStorage : sessionStorage;
+    storage.setItem('freshtrack_token', result.token);
+    storage.setItem('freshtrack_user', JSON.stringify(result.user));
     return result.user;
   },
 
@@ -84,6 +112,9 @@ export const authService = {
     role: UserRole;
     phone?: string;
     organizationName?: string;
+    location?: string;
+    geoLocation?: GeoPoint;
+    acceptedCategories?: string[];
   }): Promise<User> {
     const { data } = await api.post(API_ENDPOINTS.auth.register, payload);
     const result = unwrap<{ token: string; user: User }>(data);
@@ -102,7 +133,7 @@ export const authService = {
   },
 
   getCurrentUser(): User | null {
-    const stored = localStorage.getItem('freshtrack_user');
+    const stored = localStorage.getItem('freshtrack_user') || sessionStorage.getItem('freshtrack_user');
     return stored ? JSON.parse(stored) : null;
   },
 };
@@ -129,31 +160,48 @@ export const donationService = {
     return unwrap<Donation[]>(data);
   },
 
-  async create(payload: {
-    foodName: string;
-    category: string;
-    quantity: string;
-    description: string;
-    location: string;
-    availableUntil: string;
-    imageFile?: File;
-  }): Promise<Donation> {
+  async create(payload: CreateDonationPayload): Promise<Donation> {
     const formData = new FormData();
     formData.append('foodName', payload.foodName);
     formData.append('category', payload.category);
     formData.append('quantity', payload.quantity);
+    if (payload.quantityValue !== undefined && payload.quantityValue !== null) {
+      formData.append('quantityValue', String(payload.quantityValue));
+    }
+    if (payload.quantityUnit) {
+      formData.append('quantityUnit', payload.quantityUnit);
+    }
     formData.append('description', payload.description);
     formData.append('location', payload.location);
+    if (payload.geoLocation) {
+      formData.append('geoLocation', JSON.stringify(payload.geoLocation));
+    }
     formData.append('availableUntil', payload.availableUntil);
     if (payload.imageFile) {
       formData.append('image', payload.imageFile);
     }
+    if (payload.targetNgoId) formData.append('targetNgoId', payload.targetNgoId);
+    if (payload.offerMessage) formData.append('offerMessage', payload.offerMessage);
 
     const { data } = await api.post(API_ENDPOINTS.donations.create, formData);
     return unwrap<Donation>(data);
   },
 
-  async update(id: string, payload: Partial<Donation>): Promise<Donation> {
+  async update(id: string, payload: Partial<Donation> & { imageFile?: File }): Promise<Donation> {
+    if (payload.imageFile) {
+      const formData = new FormData();
+      Object.entries(payload).forEach(([key, val]) => {
+        if (key === 'imageFile' && val instanceof File) {
+          formData.append('image', val);
+        } else if (key === 'geoLocation' && val && typeof val === 'object') {
+          formData.append('geoLocation', JSON.stringify(val));
+        } else if (val !== undefined && val !== null) {
+          formData.append(key, String(val));
+        }
+      });
+      const { data } = await api.put(API_ENDPOINTS.donations.update(id), formData);
+      return unwrap<Donation>(data);
+    }
     const { data } = await api.put(API_ENDPOINTS.donations.update(id), payload);
     return unwrap<Donation>(data);
   },
@@ -190,7 +238,7 @@ export const requestService = {
     return unwrap<DonationRequest>(data);
   },
 
-  async create(payload: { donationId: string; message?: string }): Promise<DonationRequest> {
+  async create(payload: { donationId?: string; ngoId?: string; foodName?: string; category?: string; quantity?: string; message?: string }): Promise<DonationRequest> {
     const { data } = await api.post(API_ENDPOINTS.requests.create, payload);
     return unwrap<DonationRequest>(data);
   },
@@ -211,6 +259,97 @@ export const requestService = {
   },
 };
 
+// ===== OFFERS =====
+export const offerService = {
+  async getAll(query?: ListQuery): Promise<DonationOffer[]> {
+    const { data } = await api.get(withQuery(API_ENDPOINTS.offers.list, query));
+    return unwrap<DonationOffer[]>(data);
+  },
+
+  async getMine(query?: ListQuery): Promise<DonationOffer[]> {
+    const { data } = await api.get(withQuery(API_ENDPOINTS.offers.mine, query));
+    return unwrap<DonationOffer[]>(data);
+  },
+
+  async getReceived(query?: ListQuery): Promise<DonationOffer[]> {
+    const { data } = await api.get(withQuery(API_ENDPOINTS.offers.received, query));
+    return unwrap<DonationOffer[]>(data);
+  },
+
+  async getById(id: string): Promise<DonationOffer> {
+    const { data } = await api.get(API_ENDPOINTS.offers.get(id));
+    return unwrap<DonationOffer>(data);
+  },
+
+  async create(payload: {
+    ngoId: string;
+    foodName: string;
+    category: string;
+    quantity: string;
+    quantityValue?: number;
+    quantityUnit?: string;
+    description: string;
+    location: string;
+    geoLocation?: GeoPoint | null;
+    availableUntil: string;
+    imageFile?: File;
+    message?: string;
+  }): Promise<DonationOffer> {
+    const formData = new FormData();
+    formData.append('ngoId', payload.ngoId);
+    formData.append('foodName', payload.foodName);
+    formData.append('category', payload.category);
+    formData.append('quantity', payload.quantity);
+    if (payload.quantityValue !== undefined && payload.quantityValue !== null) {
+      formData.append('quantityValue', String(payload.quantityValue));
+    }
+    if (payload.quantityUnit) {
+      formData.append('quantityUnit', payload.quantityUnit);
+    }
+    formData.append('description', payload.description);
+    formData.append('location', payload.location);
+    if (payload.geoLocation) {
+      formData.append('geoLocation', JSON.stringify(payload.geoLocation));
+    }
+    formData.append('availableUntil', payload.availableUntil);
+    if (payload.imageFile) {
+      formData.append('image', payload.imageFile);
+    }
+    if (payload.message) {
+      formData.append('message', payload.message);
+    }
+
+    const { data } = await api.post(API_ENDPOINTS.offers.create, formData);
+    return unwrap<DonationOffer>(data);
+  },
+
+  async accept(id: string): Promise<DonationOffer> {
+    const { data } = await api.put(API_ENDPOINTS.offers.accept(id));
+    return unwrap<DonationOffer>(data);
+  },
+
+  async reject(id: string): Promise<DonationOffer> {
+    const { data } = await api.put(API_ENDPOINTS.offers.reject(id));
+    return unwrap<DonationOffer>(data);
+  },
+
+  async complete(id: string): Promise<DonationOffer> {
+    const { data } = await api.put(API_ENDPOINTS.offers.complete(id));
+    return unwrap<DonationOffer>(data);
+  },
+};
+
+export const recommendationService = {
+  async browseNgos(query?: { category?: string; maxDistanceKm?: number }): Promise<NgoBrowseResult[]> {
+    const params = new URLSearchParams();
+    if (query?.category) params.set('category', query.category);
+    if (query?.maxDistanceKm !== undefined) params.set('maxDistanceKm', String(query.maxDistanceKm));
+    const suffix = params.toString() ? `?${params.toString()}` : '';
+    const { data } = await api.get(`${API_ENDPOINTS.recommendations.ngosBrowse}${suffix}`);
+    return unwrap<NgoBrowseResult[]>(data);
+  },
+};
+
 // ===== USERS =====
 export const userService = {
   async getMe(): Promise<User> {
@@ -218,7 +357,7 @@ export const userService = {
     return unwrap<User>(data);
   },
 
-  async updateMe(payload: Pick<User, 'name' | 'phone' | 'organizationName'>): Promise<User> {
+  async updateMe(payload: UpdateProfilePayload): Promise<User> {
     const { data } = await api.put('/users/me', payload);
     return unwrap<User>(data);
   },
@@ -231,6 +370,11 @@ export const userService = {
   async getById(id: string): Promise<User> {
     const { data } = await api.get(API_ENDPOINTS.users.get(id));
     return unwrap<User>(data);
+  },
+
+  async getNgoProfile(id: string): Promise<NgoProfile> {
+    const { data } = await api.get(API_ENDPOINTS.users.ngo(id));
+    return unwrap<NgoProfile>(data);
   },
 
   async update(id: string, payload: Partial<User>): Promise<User> {
@@ -281,5 +425,13 @@ export const adminService = {
   async getDonations(query?: ListQuery): Promise<Donation[]> {
     const { data } = await api.get(withQuery(API_ENDPOINTS.admin.donations, query));
     return unwrap<Donation[]>(data);
+  },
+};
+
+// ===== AI =====
+export const aiService = {
+  async chat(payload: ChatRequest): Promise<ChatResponse> {
+    const { data } = await api.post(API_ENDPOINTS.ai.chat, payload);
+    return unwrap<ChatResponse>(data);
   },
 };

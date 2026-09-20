@@ -21,6 +21,7 @@ const [role, setRole] = useState<UserRole>(
   searchParams.get('role') === 'ngo' ? 'ngo' : 'donor'
 );
   const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -29,7 +30,7 @@ const [role, setRole] = useState<UserRole>(
     setError('');
     setLoading(true);
     try {
-      const user = await login(email, password, role);
+      const user = await login(email, password, role, rememberMe);
       toast(`Welcome back, ${user.name.split(' ')[0]}!`, 'success');
       navigate('/dashboard');
     } catch (err) {
@@ -101,7 +102,7 @@ const [role, setRole] = useState<UserRole>(
 
               <div className="flex items-center justify-between text-sm">
                 <label className="flex items-center gap-2 text-gray-600">
-                  <input type="checkbox" className="rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
+                  <input type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} className="rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
                   Remember me
                 </label>
                 <button type="button" className="text-primary-600 hover:text-primary-700 font-medium">

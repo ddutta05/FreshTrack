@@ -65,6 +65,32 @@ export default function NotificationDropdown() {
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
+  const resolveNotificationTarget = (notification: Notification) => {
+    if (!notification) return null;
+
+    const isDirectOffer =
+      (notification.requestId && notification.donationId && notification.requestId === notification.donationId) ||
+      /offer(ed|s)?|direct offer/i.test(notification.message);
+
+    if (isDirectOffer) {
+      return notification.requestId ? `/offers/${notification.requestId}` : notification.donationId ? `/offers/${notification.donationId}` : null;
+    }
+
+    if (notification.requestId && notification.donationId) {
+      return user?.role === 'ngo' ? `/food/${notification.donationId}` : `/donations/${notification.donationId}`;
+    }
+
+    if (notification.donationId) {
+      return `/donations/${notification.donationId}`;
+    }
+
+    if (notification.requestId) {
+      return `/donations/${notification.requestId}`;
+    }
+
+    return null;
+  };
+
   const handleNotificationClick = async (notification: Notification) => {
     try {
       if (!notification.read) {
@@ -77,16 +103,16 @@ export default function NotificationDropdown() {
       setOpen(false);
     }
 
-    if (!notification.donationId || !user) {
+    if (!user) {
       return;
     }
 
-    if (user.role === 'ngo') {
-      navigate(`/food/${notification.donationId}`);
+    const target = resolveNotificationTarget(notification);
+    if (!target) {
       return;
     }
 
-    navigate(`/donations/${notification.donationId}`);
+    navigate(target);
   };
 
   const handleMarkAllRead = async () => {

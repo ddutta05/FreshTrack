@@ -56,7 +56,11 @@ describe("FreshTrack Backend API", () => {
         email: "ngo-noname@test.dev",
         password: "Pass1234",
         role: USER_ROLES.NGO,
-        organizationName: "Community Relief"
+        organizationName: "Community Relief",
+        phone: "+15550001111",
+        location: "Community Center",
+        geoLocation: { type: "Point", coordinates: [-73.9857, 40.7484] },
+        acceptedCategories: ["Rice"]
       });
 
       expect(res.status).toBe(201);
@@ -305,7 +309,7 @@ describe("FreshTrack Backend API", () => {
       expect(requestableList.body.data.some((d) => d.id === donation._id.toString())).toBe(true);
     });
 
-    test("donor accepts then ngo completes request", async () => {
+    test("donor accepts then both parties confirm completion", async () => {
       const donor = await createUser({ role: USER_ROLES.DONOR });
       const ngo = await createUser({ role: USER_ROLES.NGO, organizationName: "Help NGO" });
       const donation = await createDonationForUser(donor);
@@ -329,10 +333,86 @@ describe("FreshTrack Backend API", () => {
         .set("Authorization", authHeaderFor(ngo));
 
       expect(completeRes.status).toBe(200);
-      expect(completeRes.body.data.status).toBe(REQUEST_STATUS.COMPLETED);
+      expect(completeRes.body.data.status).toBe(REQUEST_STATUS.ACCEPTED);
+      expect(completeRes.body.data.ngoCompletedAt).toBeTruthy();
+
+      const donorCompleteRes = await request(app)
+        .put(`/api/requests/${reqId}/complete`)
+        .set("Authorization", authHeaderFor(donor));
+
+      expect(donorCompleteRes.status).toBe(200);
+      expect(donorCompleteRes.body.data.status).toBe(REQUEST_STATUS.COMPLETED);
 
       const updatedDonation = await Donation.findById(donation._id);
       expect(updatedDonation.status).toBe(DONATION_STATUS.COMPLETED);
+    });
+
+    test("direct offer creates a DonationOffer without creating a Donation or DonationRequest", async () => {
+      const donor = await createUser({ role: USER_ROLES.DONOR });
+      const ngo = await createUser({ role: USER_ROLES.NGO, organizationName: "Target NGO" });
+      const beforeDonationCount = await Donation.countDocuments();
+      const beforeRequestCount = await require("../src/models/DonationRequest").countDocuments();
+      const beforeOfferCount = await require("../src/models/DonationOffer").countDocuments();
+
+      const result = await request(app)
+        .post("/api/offers")
+        .set("Authorization", authHeaderFor(donor))
+        .send({
+          ngoId: ngo._id.toString(),
+          foodName: "Chocolates",
+          category: "Chocolates",
+          quantity: "3 boxes",
+          description: "Direct offer",
+          location: "Community Hall",
+          availableUntil: new Date(Date.now() + 86400000).toISOString()
+        });
+
+      expect(result.status).toBe(201);
+      expect(result.body.data.targetNgoId).toBe(ngo._id.toString());
+      expect(result.body.data.direction).toBe("donor_offer");
+      expect(await Donation.countDocuments()).toBe(beforeDonationCount);
+      expect(await require("../src/models/DonationRequest").countDocuments()).toBe(beforeRequestCount);
+      expect(await require("../src/models/DonationOffer").countDocuments()).toBe(beforeOfferCount + 1);
+    });
+
+    test("donor can create a direct NGO offer and both parties can complete it", async () => {
+      const donor = await createUser({ role: USER_ROLES.DONOR });
+      const ngo = await createUser({ role: USER_ROLES.NGO, organizationName: "Offer NGO" });
+
+      const offer = await request(app)
+        .post("/api/offers")
+        .set("Authorization", authHeaderFor(donor))
+        .send({ ngoId: ngo._id.toString(), foodName: "Chocolates", category: "Chocolates", quantity: "5 boxes", message: "For the children" });
+
+      expect(offer.status).toBe(201);
+      expect(offer.body.data.direction).toBe("donor_offer");
+      expect(offer.body.data.foodName).toBe("Chocolates");
+
+      const accept = await request(app)
+        .put(`/api/offers/${offer.body.data.id}/accept`)
+        .set("Authorization", authHeaderFor(ngo));
+      expect(accept.status).toBe(200);
+
+      const firstComplete = await request(app)
+        .put(`/api/offers/${offer.body.data.id}/complete`)
+        .set("Authorization", authHeaderFor(ngo));
+      expect(firstComplete.body.data.status).toBe(REQUEST_STATUS.ACCEPTED);
+
+      const secondComplete = await request(app)
+        .put(`/api/offers/${offer.body.data.id}/complete`)
+        .set("Authorization", authHeaderFor(donor));
+      expect(secondComplete.body.data.status).toBe(REQUEST_STATUS.COMPLETED);
+    });
+
+    test("unrelated users cannot confirm completion", async () => {
+      const donor = await createUser({ role: USER_ROLES.DONOR });
+      const ngo = await createUser({ role: USER_ROLES.NGO });
+      const stranger = await createUser({ role: USER_ROLES.DONOR });
+      const donation = await createDonationForUser(donor);
+      const created = await request(app).post("/api/requests").set("Authorization", authHeaderFor(ngo)).send({ donationId: donation._id.toString() });
+      await request(app).put(`/api/requests/${created.body.data.id}/accept`).set("Authorization", authHeaderFor(donor));
+      const result = await request(app).put(`/api/requests/${created.body.data.id}/complete`).set("Authorization", authHeaderFor(stranger));
+      expect(result.status).toBe(403);
     });
 
     test("competing requests allow only one accepted", async () => {

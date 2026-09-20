@@ -18,12 +18,15 @@ import NgoDashboard from '@/pages/ngo/NgoDashboard';
 import AvailableFood from '@/pages/ngo/AvailableFood';
 import FoodDetails from '@/pages/ngo/FoodDetails';
 import MyRequests from '@/pages/ngo/MyRequests';
+import OfferDetailsPage from '@/pages/OfferDetails';
 
 import AdminDashboard from '@/pages/admin/AdminDashboard';
 import AdminUsers from '@/pages/admin/AdminUsers';
 import AdminDonations from '@/pages/admin/AdminDonations';
 
 import ProfilePage from '@/pages/ProfilePage';
+import NgoSearch from '@/pages/donor/NgoSearch';
+import NgoProfilePage from '@/pages/NgoProfilePage';
 function ScrollToTop() {
   const { pathname } = useLocation();
 
@@ -83,6 +86,16 @@ export default function App() {
                 </ProtectedRoute>
               }
             />
+            <Route
+              path="/offers/:id"
+              element={
+                <ProtectedRoute roles={['donor', 'ngo', 'admin']}>
+                  <OfferDetailsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route path="/find-ngos" element={<ProtectedRoute roles={['donor']}><NgoSearch /></ProtectedRoute>} />
+            <Route path="/ngos/:id" element={<ProtectedRoute roles={['donor', 'ngo']}><NgoProfilePage /></ProtectedRoute>} />
 
             {/* NGO routes */}
             <Route

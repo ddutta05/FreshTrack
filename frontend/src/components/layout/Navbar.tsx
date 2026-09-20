@@ -8,6 +8,7 @@ const roleNavItems = {
   donor: [
     { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { to: '/my-donations', label: 'My Donations', icon: Package },
+    { to: '/find-ngos', label: 'Find NGOs', icon: Users },
     { to: '/profile', label: 'Profile', icon: Users },
   ],
   ngo: [

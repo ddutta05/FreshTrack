@@ -34,11 +34,18 @@ const NOTIFICATION_TYPES = {
 
 const ACTIVE_REQUEST_STATUSES = [REQUEST_STATUS.PENDING, REQUEST_STATUS.ACCEPTED];
 
+/**
+ * Allowed values for the structured quantityUnit field on Donation.
+ * The free-text `quantity` field remains for backward compatibility and display.
+ */
+const QUANTITY_UNITS = ["servings", "kg", "g", "liters", "loaves", "boxes", "pieces", "other"];
+
 module.exports = {
   USER_ROLES,
   USER_STATUS,
   DONATION_STATUS,
   REQUEST_STATUS,
   NOTIFICATION_TYPES,
-  ACTIVE_REQUEST_STATUSES
+  ACTIVE_REQUEST_STATUSES,
+  QUANTITY_UNITS
 };

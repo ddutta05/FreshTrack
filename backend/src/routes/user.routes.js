@@ -4,6 +4,7 @@ const {
   updateProfile,
   listUsers,
   getUserById,
+  getNgoProfile,
   updateUser,
   disableUser,
   enableUser
@@ -20,6 +21,7 @@ router.use(requireAuth);
 
 router.get("/me", getProfile);
 router.put("/me", profileUpdateValidator, validate, updateProfile);
+router.get("/ngos/:id", userIdParamValidator, validate, getNgoProfile);
 
 router.get("/", requireRole(USER_ROLES.ADMIN), userListValidator, validate, listUsers);
 router.get("/:id", requireRole(USER_ROLES.ADMIN), userIdParamValidator, validate, getUserById);

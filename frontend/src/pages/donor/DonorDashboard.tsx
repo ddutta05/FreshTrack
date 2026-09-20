@@ -1,26 +1,31 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Package, Clock, CheckCircle2, AlertCircle, Plus, Heart } from 'lucide-react';
+import { Package, Clock, CheckCircle2, AlertCircle, Plus, Heart, Send } from 'lucide-react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import DashboardCard from '@/components/donation/DashboardCard';
 import DonationCard from '@/components/donation/DonationCard';
 
 import { LoadingSpinner, EmptyState, ErrorState } from '@/components/common/LoadingSpinner';
 import { useAuth } from '@/context/AuthContext';
-import { donationService } from '@/services/services';
-import type { Donation } from '@/types';
+import { donationService, offerService, requestService } from '@/services/services';
+import type { Donation, DonationOffer, DonationRequest } from '@/types';
 
 export default function DonorDashboard() {
   const { user } = useAuth();
   const [donations, setDonations] = useState<Donation[]>([]);
+  const [offers, setOffers] = useState<DonationOffer[]>([]);
+  const [requests, setRequests] = useState<DonationRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
   useEffect(() => {
     if (!user) return;
-    donationService
-      .getByDonor(user.id)
-      .then((data) => setDonations(data))
+    Promise.all([donationService.getByDonor(user.id), offerService.getMine(), requestService.getAll()])
+      .then(([donationData, offerData, requestData]) => {
+        setDonations(donationData);
+        setOffers(offerData);
+        setRequests(requestData);
+      })
       .catch(() => setError(true))
       .finally(() => setLoading(false));
   }, [user]);
@@ -28,7 +33,8 @@ export default function DonorDashboard() {
   const total = donations.length;
   const active = donations.filter((d) => d.status === 'available' || d.status === 'pending' || d.status === 'accepted').length;
   const completed = donations.filter((d) => d.status === 'completed').length;
-  const pendingRequests = donations.filter((d) => d.status === 'pending').length;
+  const offersSent = offers.length;
+  const pendingRequests = requests.filter((request) => request.status === 'pending' && request.donorId === user?.id && request.direction !== 'donor_offer').length;
   const recent = donations.slice(0, 3);
 
   return (
@@ -46,11 +52,12 @@ export default function DonorDashboard() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
         <DashboardCard icon={<Package className="w-6 h-6" />} label="Total Donations" value={total} color="primary" />
         <DashboardCard icon={<Clock className="w-6 h-6" />} label="Active Donations" value={active} color="blue" />
         <DashboardCard icon={<CheckCircle2 className="w-6 h-6" />} label="Completed" value={completed} color="gray" />
-        <DashboardCard icon={<AlertCircle className="w-6 h-6" />} label="Pending Requests" value={pendingRequests} color="amber" />
+        <DashboardCard icon={<Send className="w-6 h-6" />} label="Offers Sent" value={offersSent} color="primary" />
+        <DashboardCard icon={<AlertCircle className="w-6 h-6" />} label="Pending Incoming Requests" value={pendingRequests} color="amber" />
       </div>
 
       {/* Recent Donations */}
