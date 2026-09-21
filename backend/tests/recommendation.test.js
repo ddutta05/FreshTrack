@@ -130,11 +130,10 @@ describe("Phase 2 — Recommendation Engine", () => {
       expect(res.body.data.length).toBe(0);
     });
 
-    test("4. Incompatible category is excluded", async () => {
-      // NGO only accepts Cooked Food, Rice, Bakery
+    test("4. Unrestricted search includes public donations across categories", async () => {
       await Donation.create({
         foodName: "Fresh Apples",
-        category: "Fruits", // not accepted by this NGO
+        category: "Fruits",
         quantity: "10 kg",
         description: "Apples",
         location: "Indiranagar",
@@ -149,7 +148,7 @@ describe("Phase 2 — Recommendation Engine", () => {
         .set("Authorization", authHeaderFor(ngo));
 
       expect(res.status).toBe(200);
-      expect(res.body.data.length).toBe(0);
+      expect(res.body.data.length).toBe(1);
     });
 
     test("5. Donation without geoLocation is excluded", async () => {

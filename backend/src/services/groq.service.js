@@ -3,6 +3,7 @@ const env = require("../config/env");
 const { AppError } = require("../utils/errors");
 const { USER_ROLES } = require("../utils/constants");
 const recommendationService = require("./recommendation.service");
+const { extractIntent, capabilityMessage } = require("./chatIntent.service");
 
 const DEFAULT_MODEL = "openai/gpt-oss-20b";
 const MAX_TOOL_ROUNDS = 3;
@@ -47,20 +48,6 @@ Available FreshTrack capabilities:
 ${capability}
 Current FreshTrack features include profile management, donation creation and management, NGO browsing/profiles, donation requests, direct donation offers, accepted-request contact and handoff coordination, and two-party completion confirmation. There is no automatic email confirmation or pickup scheduling.
 If the user asks for another role's workflow, explain the correct workflow for the authenticated role instead of pretending their role changed.`;
-}
-
-function unsupportedRecommendationMessage(message, role) {
-  const text = (message || "").toLowerCase();
-  if (role === USER_ROLES.DONOR && /\b(find|nearby|search|show)\b.*\bdonors?\b/.test(text)) {
-    return "I'm logged in with your donor account, so I can help you find NGOs, not other donors.";
-  }
-  if (role === USER_ROLES.NGO && /\b(find|nearby|search|show)\b.*\bdonors?\b/.test(text)) {
-    return "I'm logged in with your NGO account, so I can help you find available food donations, not donor accounts.";
-  }
-  if (role === USER_ROLES.NGO && /\b(find|nearby|search|show)\b.*\bngos?\b/.test(text)) {
-    return "I'm logged in with your NGO account, so I can help you find available food donations, not other NGOs.";
-  }
-  return null;
 }
 
 function knownFeatureAnswer(message, role) {
@@ -193,11 +180,6 @@ function enforceExplicitDistance(toolCall, message) {
   }
 }
 
-function isRecommendationRequest(message, role) {
-  if (role !== USER_ROLES.DONOR && role !== USER_ROLES.NGO) return false;
-  return /\b(?:nearby|near me|within\s+\d|find\s+(?:me\s+)?(?:an?\s+)?(?:ngo|ngos|donations?|food)|show\s+.*(?:ngo|donations?|food)|(?:ngo|donations?|food)\s+.*(?:near|accept))\b/i.test(message || "");
-}
-
 function sanitizeHistory(history) {
   if (!Array.isArray(history)) return [];
 
@@ -239,6 +221,24 @@ async function executeTool(toolCall, user) {
   }
 
   throw new AppError("The requested FreshTrack tool is not available.", 422, "AI_TOOL_NOT_ALLOWED");
+}
+
+async function executeRecommendationIntent(intent, user) {
+  if (user.role === USER_ROLES.DONOR && intent.target === "ngo") {
+    return recommendationService.findNgosForDonor({
+      donorId: user.id,
+      category: intent.category || undefined,
+      maxDistanceKm: intent.maxDistanceKm || undefined
+    });
+  }
+  if (user.role === USER_ROLES.NGO && intent.target === "donation") {
+    return recommendationService.findDonationsForNgo({
+      ngoId: user.id,
+      category: intent.category || undefined,
+      maxDistanceKm: intent.maxDistanceKm || undefined
+    });
+  }
+  throw new AppError("The requested FreshTrack recommendation is not available for this account.", 422, "AI_TOOL_NOT_ALLOWED");
 }
 
 function sanitizeRecommendationResult(result) {
@@ -325,10 +325,22 @@ async function generateChatResponse(message, options = {}) {
     throw new AppError("Message is required and must be a non-empty string", 422, "VALIDATION_ERROR");
   }
 
-  const unsupported = unsupportedRecommendationMessage(message, options.user?.role);
+  const intent = extractIntent(message, options.history);
+  const unsupported = capabilityMessage(options.user?.role, intent.target);
   if (unsupported) return { message: unsupported, recommendations: [] };
   const knownAnswer = knownFeatureAnswer(message, options.user?.role);
   if (knownAnswer) return { message: knownAnswer, recommendations: [] };
+
+  if (intent.kind === "recommendation") {
+    try {
+      const result = await executeRecommendationIntent(intent, options.user);
+      const recommendations = buildUiRecommendations(result);
+      return { message: groundedRecommendationMessage(recommendations), recommendations };
+    } catch (error) {
+      const errorMessage = error instanceof AppError ? error.message : "Recommendation data is temporarily unavailable.";
+      return { message: groundedRecommendationMessage([], errorMessage), recommendations: [] };
+    }
+  }
 
   const modelName = options.model || DEFAULT_MODEL;
   const groq = new Groq({ apiKey: env.groqApiKey });
@@ -349,7 +361,7 @@ async function generateChatResponse(message, options = {}) {
         messages,
         ...(tools.length ? { tools } : {}),
         ...(tools.length
-          ? { tool_choice: round === 0 && isRecommendationRequest(message, options.user?.role) ? "required" : "auto" }
+          ? { tool_choice: "auto" }
           : {}),
         temperature: options.temperature ?? 0.7,
         max_tokens: options.maxTokens ?? 1024
@@ -420,8 +432,8 @@ module.exports = {
   MAX_TOOL_ROUNDS,
   toolsForRole,
   systemInstructionForRole,
-  isRecommendationRequest,
   executeTool,
+  executeRecommendationIntent,
   sanitizeRecommendationResult,
   buildUiRecommendations,
   sanitizeHistory

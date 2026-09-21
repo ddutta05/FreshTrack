@@ -29,16 +29,24 @@ function calculateHaversineDistance([lng1, lat1], [lng2, lat2]) {
 }
 
 function normalizeCategory(value) {
-  const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
-  return normalized.length > 3 && normalized.endsWith("s") ? normalized.slice(0, -1) : normalized;
+  return typeof value === "string"
+    ? value.trim().toLowerCase().replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").replace(/ies$/, "y").replace(/s$/, "")
+    : "";
 }
 
 function acceptsCategory(acceptedCategories, category) {
   const target = normalizeCategory(category);
+  if (!target) return true;
   return acceptedCategories.some((accepted) => {
     const normalized = normalizeCategory(accepted);
-    return normalized === "any" || normalized === target;
+    return normalized === "any" || normalized === target || normalized.startsWith(target) || target.startsWith(normalized);
   });
+}
+
+function categoryMatches(value, category) {
+  const normalizedValue = normalizeCategory(value);
+  const normalizedCategory = normalizeCategory(category);
+  return !normalizedCategory || normalizedValue === normalizedCategory || normalizedValue.startsWith(normalizedCategory) || normalizedCategory.startsWith(normalizedValue);
 }
 
 /**
@@ -136,11 +144,6 @@ async function findDonationsForNgo({ ngoId, category, maxDistanceKm }) {
     );
   }
 
-  // If NGO has no accepted categories configured, return empty recommendations safely
-  if (!ngo.acceptedCategories || ngo.acceptedCategories.length === 0) {
-    return [];
-  }
-
   const searchRadiusKm = maxDistanceKm === undefined ? undefined : Number(maxDistanceKm);
 
   const now = new Date();
@@ -165,8 +168,7 @@ async function findDonationsForNgo({ ngoId, category, maxDistanceKm }) {
       continue;
     }
 
-    if (!acceptsCategory(ngo.acceptedCategories, donation.category)) continue;
-    if (category && normalizeCategory(donation.category) !== normalizeCategory(category)) continue;
+    if (category && !categoryMatches(donation.category, category)) continue;
 
     const distanceKm = calculateHaversineDistance(
       ngo.geoLocation.coordinates,
@@ -267,10 +269,6 @@ async function findNgosForDonor({ donorId, category, donationId, maxDistanceKm }
     }
   }
 
-  if (!targetCategory) {
-    throw new AppError("Category is required for NGO recommendations", 422, "VALIDATION_ERROR");
-  }
-
   if (!centerCoordinates || !Array.isArray(centerCoordinates) || centerCoordinates.length !== 2) {
     throw new AppError(
       "Donor location is not set. Please update your profile or specify a donation location.",
@@ -308,7 +306,7 @@ async function findNgosForDonor({ donorId, category, donationId, maxDistanceKm }
       continue;
     }
 
-    if (!acceptsCategory(ngo.acceptedCategories || [], targetCategory) && normalizeCategory(targetCategory) !== "any") {
+    if (targetCategory && !(normalizeCategory(targetCategory) === "any" || acceptsCategory(ngo.acceptedCategories || [], targetCategory))) {
       continue;
     }
 
@@ -374,7 +372,7 @@ async function browseNgosForDonor({ donorId, category, maxDistanceKm }) {
 
   const ngos = await User.find(query);
   return ngos
-    .filter((ngo) => !category || acceptsCategory(ngo.acceptedCategories || [], category) || normalizeCategory(category) === "any")
+    .filter((ngo) => !category || normalizeCategory(category) === "any" || acceptsCategory(ngo.acceptedCategories || [], category))
     .map((ngo) => {
       const distanceKm = donor.geoLocation?.coordinates && ngo.geoLocation?.coordinates
         ? calculateHaversineDistance(donor.geoLocation.coordinates, ngo.geoLocation.coordinates)
@@ -401,4 +399,7 @@ module.exports = {
   calculateHaversineDistance,
   calculateDonorReliability,
   calculateNgoMetrics
+  ,normalizeCategory
+  ,acceptsCategory
+  ,categoryMatches
 };
