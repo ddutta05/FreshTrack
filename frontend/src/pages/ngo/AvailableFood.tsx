@@ -55,7 +55,7 @@ export default function AvailableFood() {
           </Select>
           <Input
             label="Location"
-            placeholder="Search by location..."
+            placeholder="Location"
             value={locationFilter}
             onChange={(e) => setLocationFilter(e.target.value)}
           />

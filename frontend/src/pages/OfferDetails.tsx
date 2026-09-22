@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, MapPin, Clock, Calendar, Package, Tag, FileText, User, Check, CheckCircle2, X } from 'lucide-react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import StatusBadge from '@/components/common/StatusBadge';
@@ -10,6 +10,7 @@ import { useToast } from '@/context/ToastContext';
 import { offerService } from '@/services/services';
 import type { DonationOffer } from '@/types';
 import { getDonationImageUrl } from '@/utils/image';
+import { getCompletionDetails, getCompletionMessage } from '@/utils/workflow';
 
 export default function OfferDetailsPage() {
   const { id } = useParams();
@@ -73,9 +74,21 @@ export default function OfferDetailsPage() {
   const imageUrl = getDonationImageUrl(offer.image);
   const isNGO = user?.role === 'ngo';
   const isDonor = user?.role === 'donor';
+  const isViewerDonor = Boolean(user && offer.donorId === user.id);
+  const isViewerNgo = Boolean(user && offer.ngoId === user.id);
+  const viewerRole = isViewerDonor ? 'donor' : isViewerNgo ? 'ngo' : undefined;
+  const completionDetails = getCompletionDetails({
+    viewerRole,
+    viewerId: user?.id,
+    donorId: offer.donorId,
+    ngoId: offer.ngoId,
+    donorCompletedAt: offer.donorCompletedAt,
+    ngoCompletedAt: offer.ngoCompletedAt,
+  });
+  const completionState = completionDetails.state;
+  const completionMessage = getCompletionMessage({ completionState, viewerRole });
   const isAccepted = offer.status === 'accepted';
-  const currentUserCompleted = isDonor ? Boolean(offer.donorCompletedAt) : isNGO ? Boolean(offer.ngoCompletedAt) : false;
-  const otherPartyCompleted = isDonor ? Boolean(offer.ngoCompletedAt) : isNGO ? Boolean(offer.donorCompletedAt) : false;
+  const showContactBlock = isAccepted && Boolean(offer.contact);
 
   return (
     <DashboardLayout>
@@ -120,28 +133,10 @@ export default function OfferDetailsPage() {
         </div>
 
         <div className="space-y-6">
-          {(isAccepted && offer.contact) && (
-            <div className="card p-5 bg-primary-50/30 border-primary-100">
-              <h3 className="font-semibold text-gray-900 mb-3">Contact & Handoff</h3>
-              <div className="space-y-2 text-sm text-gray-700">
-                {isDonor && offer.contact.ngo && (
-                  <>
-                    <p><span className="font-medium text-gray-900">NGO:</span> {offer.contact.ngo.name || 'NGO'}</p>
-                    <p>Phone: {offer.contact.ngo.phone || 'Not provided'}</p>
-                    <p>Email: {offer.contact.ngo.email || 'Not provided'}</p>
-                    {offer.contact.ngo.location && <p>Location: {offer.contact.ngo.location}</p>}
-                  </>
-                )}
-                {isNGO && offer.contact.donor && (
-                  <>
-                    <p><span className="font-medium text-gray-900">Donor:</span> {offer.contact.donor.name || 'Donor'}</p>
-                    <p>Phone: {offer.contact.donor.phone || 'Not provided'}</p>
-                    <p>Email: {offer.contact.donor.email || 'Not provided'}</p>
-                  </>
-                )}
-                {offer.location && <p>Pickup / Hand-off Location: {offer.location}</p>}
-              </div>
-              <p className="mt-4 text-sm text-gray-600">Contact the other party to arrange pickup or drop-off. After the food is handed over, both sides should confirm completion.</p>
+          {offer.status === 'pending' && isViewerDonor && (
+            <div className="card p-5">
+              <h3 className="font-semibold text-gray-900 mb-3">Pending</h3>
+              <p className="text-sm text-gray-600">Waiting for the NGO to review and respond to this offer.</p>
             </div>
           )}
 
@@ -155,41 +150,52 @@ export default function OfferDetailsPage() {
             </div>
           )}
 
-          {offer.status === 'accepted' && user?.role === 'ngo' && !offer.ngoCompletedAt && (
-            <div className="card p-5">
-              <h3 className="font-semibold text-gray-900 mb-3">Direct Offer Status</h3>
-              <Button variant="success" className="w-full" onClick={handleComplete} disabled={actionLoading}><CheckCircle2 className="w-4 h-4" /> Mark Completed</Button>
+          {showContactBlock && (
+            <div className="card p-5 bg-primary-50/30 border-primary-100">
+              <h3 className="font-semibold text-gray-900 mb-3">Contact & Handoff</h3>
+              <div className="space-y-2 text-sm text-gray-700">
+                {isViewerDonor && offer.contact?.ngo && (
+                  <>
+                    <p><span className="font-medium text-gray-900">NGO:</span> {offer.contact.ngo.name || 'NGO'}</p>
+                    <p>Phone: {offer.contact.ngo.phone || 'Not provided'}</p>
+                    <p>Email: {offer.contact.ngo.email || 'Not provided'}</p>
+                    {offer.contact.ngo.location && <p>Location: {offer.contact.ngo.location}</p>}
+                  </>
+                )}
+                {isViewerNgo && offer.contact?.donor && (
+                  <>
+                    <p><span className="font-medium text-gray-900">Donor:</span> {offer.contact.donor.name || 'Donor'}</p>
+                    <p>Phone: {offer.contact.donor.phone || 'Not provided'}</p>
+                    <p>Email: {offer.contact.donor.email || 'Not provided'}</p>
+                  </>
+                )}
+                {offer.location && <p>Pickup / Hand-off Location: {offer.location}</p>}
+              </div>
+              <p className="mt-4 text-sm text-gray-600">Contact the other party to arrange pickup or drop-off. After the food is handed over, both sides should confirm completion.</p>
             </div>
           )}
 
-          {offer.status === 'accepted' && user?.role === 'donor' && !offer.donorCompletedAt && (
+          {isAccepted && (
             <div className="card p-5">
-              <h3 className="font-semibold text-gray-900 mb-3">Direct Offer Status</h3>
-              <Button variant="success" className="w-full" onClick={handleComplete} disabled={actionLoading}><CheckCircle2 className="w-4 h-4" /> Mark Completed</Button>
-            </div>
-          )}
-
-          {isAccepted && offer.status !== 'completed' && currentUserCompleted && !otherPartyCompleted && (
-            <div className="card p-5">
-              <h3 className="font-semibold text-gray-900 mb-3">Direct Offer Status</h3>
-              <p className="text-sm text-gray-600">
-                {isDonor ? 'Your completion confirmed. Waiting for the other party.' : 'Donor has confirmed. Please confirm completion when the food has been handed over.'}
-              </p>
-            </div>
-          )}
-
-          {isAccepted && offer.status !== 'completed' && otherPartyCompleted && !currentUserCompleted && (
-            <div className="card p-5">
-              <h3 className="font-semibold text-gray-900 mb-3">Direct Offer Status</h3>
-              <p className="text-sm text-gray-600">
-                {isNGO ? 'Donor has confirmed. Please confirm completion when the food has been handed over.' : 'NGO has confirmed. Please confirm completion when the food has been handed over.'}
-              </p>
+              <h3 className="font-semibold text-gray-900 mb-3">Accepted</h3>
+              {completionState === 'both' ? (
+                <p className="text-sm text-gray-600">Completed</p>
+              ) : (
+                <>
+                  {(completionState === 'viewer' || completionState === 'other') && (
+                    <p className="text-sm text-gray-600 mb-3">{completionMessage}</p>
+                  )}
+                  {(completionState === 'none' || completionState === 'other') && (
+                    <Button variant="success" className="w-full" onClick={handleComplete} disabled={actionLoading}><CheckCircle2 className="w-4 h-4" /> Mark as Completed</Button>
+                  )}
+                </>
+              )}
             </div>
           )}
 
           {offer.status === 'rejected' && (
             <div className="card p-5">
-              <h3 className="font-semibold text-gray-900 mb-3">Direct Offer Status</h3>
+              <h3 className="font-semibold text-gray-900 mb-3">Rejected</h3>
               <p className="text-sm text-gray-600">This offer was rejected.</p>
             </div>
           )}

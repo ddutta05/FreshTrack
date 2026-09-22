@@ -45,7 +45,12 @@ export default function MyDonations() {
 
   const renderOfferAction = (offer: DonationOffer) => {
     if (offer.status === 'pending') {
-      return <span className="text-xs font-medium text-amber-700">Waiting for NGO</span>;
+      return (
+        <div className="flex flex-col gap-2 text-left">
+          <span className="text-xs font-medium text-amber-700">Pending</span>
+          <Link to={`/offers/${offer.id}`} className="text-xs font-medium text-primary-700 hover:text-primary-800">View offer</Link>
+        </div>
+      );
     }
 
     if (offer.status === 'accepted') {

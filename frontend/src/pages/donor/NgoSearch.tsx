@@ -39,7 +39,7 @@ export default function NgoSearch() {
           </select>
         </label>
         <Input label="Distance (km, optional)" type="number" min="0.1" max="50" placeholder="Any distance" value={radius} onChange={(event) => setRadius(event.target.value)} />
-        <div className="flex items-center gap-2 text-xs text-gray-500 sm:col-span-2"><Filter className="h-4 w-4" /> Results are nearest-first when your profile has a saved location.</div>
+        <div className="flex items-center gap-2 text-xs text-gray-500 sm:col-span-2"><Filter className="h-4 w-4" />Nearest first when location is saved.</div>
       </div>
       {loading ? <LoadingSpinner label="Loading NGOs..." /> : error ? <ErrorState message="Unable to load NGOs." onRetry={() => window.location.reload()} /> : ngos.length === 0 ? <EmptyState icon={Users} title="No NGOs found" message="Try another category or distance." /> : (
         <div className="grid gap-5 md:grid-cols-2">

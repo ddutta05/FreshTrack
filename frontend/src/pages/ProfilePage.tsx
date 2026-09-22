@@ -262,10 +262,9 @@ export default function ProfilePage() {
                 {user.role === 'ngo' && (
                   <Input
                     label="Location"
-                    placeholder="e.g. GEC Circle, Chattogram"
+                    placeholder="Area or city"
                     value={form.location}
                     onChange={(e) => setForm({ ...form, location: e.target.value })}
-                    hint="A human-readable area shown to donors."
                   />
                 )}
 
@@ -275,7 +274,7 @@ export default function ProfilePage() {
                     <MapPin className="w-4 h-4 text-primary-600" /> Base Location / Coordinates
                   </label>
                   <p className="text-xs text-gray-500 mb-3">
-                    Used to calculate proximity for recommendations. You can capture your current location below.
+                    Required for distance-based recommendations.
                   </p>
 
                   {form.geoLocation?.coordinates && form.geoLocation.coordinates.length === 2 ? (
@@ -389,7 +388,7 @@ export default function ProfilePage() {
 
                     <Textarea
                       label="Current Needs / Urgent Request Notes"
-                      placeholder="Describe what items or quantities your organization needs right now (max 500 chars)..."
+                      placeholder="Current needs"
                       value={form.currentNeedDescription}
                       maxLength={500}
                       onChange={(e) => setForm({ ...form, currentNeedDescription: e.target.value })}

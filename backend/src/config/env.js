@@ -38,6 +38,17 @@ function mustGet(name, fallback) {
   return value;
 }
 
+function parseOrigins(value, fallback) {
+  const entries = (value || fallback || "http://localhost:5173")
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  return Array.from(new Set(entries));
+}
+
+const clientOrigins = parseOrigins(process.env.CLIENT_URL || process.env.CORS_ORIGINS, "http://localhost:5173");
+
 const env = {
   nodeEnv: process.env.NODE_ENV || "development",
   port: Number(process.env.PORT || 5000),
@@ -45,7 +56,8 @@ const env = {
   mongoDbName: (process.env.MONGODB_DB_NAME || "freshtrack").trim(),
   jwtSecret: mustGet("JWT_SECRET"),
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || "7d",
-  clientUrl: process.env.CLIENT_URL || "http://localhost:5173",
+  clientUrl: clientOrigins[0],
+  clientUrls: clientOrigins,
   maxFileSizeMb: Number(process.env.MAX_FILE_SIZE_MB || 5),
   expirySweepIntervalMs: Number(process.env.EXPIRY_SWEEP_INTERVAL_MS || 60000),
   adminName: process.env.ADMIN_NAME || "",

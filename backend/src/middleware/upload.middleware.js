@@ -1,33 +1,16 @@
-const path = require("path");
-const fs = require("fs");
 const multer = require("multer");
 const env = require("../config/env");
-const { uploadsDir } = require("../utils/imagePath");
-
-const allowedMimes = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
-
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    fs.mkdirSync(uploadsDir, { recursive: true });
-    cb(null, uploadsDir);
-  },
-  filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase();
-    const safeExt = ext && ext.length <= 6 ? ext : ".jpg";
-    const safeName = `${Date.now()}-${Math.round(Math.random() * 1e9)}${safeExt}`;
-    cb(null, safeName);
-  }
-});
+const { isAllowedImageMimeType } = require("../utils/imageStorage");
 
 function fileFilter(_req, file, cb) {
-  if (!allowedMimes.has(file.mimetype)) {
-    return cb(new Error("Unsupported file type"));
+  if (!isAllowedImageMimeType(file.mimetype)) {
+    return cb(new Error("Unsupported image type"));
   }
   return cb(null, true);
 }
 
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   fileFilter,
   limits: {
     fileSize: env.maxFileSizeMb * 1024 * 1024

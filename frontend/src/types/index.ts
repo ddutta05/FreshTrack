@@ -63,6 +63,18 @@ export const QUANTITY_UNITS = [
 
 export type QuantityUnit = (typeof QUANTITY_UNITS)[number];
 
+export interface RegisterPayload {
+  name?: string;
+  email: string;
+  password: string;
+  role: UserRole;
+  phone?: string;
+  organizationName?: string;
+  location?: string;
+  geoLocation?: GeoPoint | null;
+  acceptedCategories?: string[];
+}
+
 export interface User {
   id: string;
   name: string;

@@ -5,13 +5,16 @@ import DashboardLayout from '@/components/layout/DashboardLayout';
 import StatusBadge from '@/components/common/StatusBadge';
 import Button from '@/components/common/Button';
 import { LoadingSpinner, ErrorState } from '@/components/common/LoadingSpinner';
+import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
 import { donationService, requestService } from '@/services/services';
 import type { Donation, DonationRequest } from '@/types';
 import { getDonationImageUrl } from '@/utils/image';
+import { getCompletionMessage, getCompletionState } from '@/utils/workflow';
 
 export default function DonationDetails() {
   const { id } = useParams();
+  const { user } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -102,6 +105,19 @@ export default function DonationDetails() {
 
   const acceptedRequest = requests.find((r) => r.status === 'accepted');
   const imageUrl = getDonationImageUrl(donation.image);
+  const completionState = acceptedRequest
+    ? getCompletionState({
+        viewerRole: 'donor',
+        viewerId: user?.id,
+        donorId: donation.donorId,
+        ngoId: acceptedRequest.ngoId,
+        donorCompletedAt: acceptedRequest.donorCompletedAt,
+        ngoCompletedAt: acceptedRequest.ngoCompletedAt,
+      })
+    : 'none';
+  const completionMessage = acceptedRequest
+    ? getCompletionMessage({ completionState, viewerRole: 'donor' })
+    : '';
 
   return (
     <DashboardLayout>
@@ -173,7 +189,12 @@ export default function DonationDetails() {
                 <p><span className="text-gray-500">Requested:</span> <span className="text-gray-700">{new Date(acceptedRequest.createdAt).toLocaleDateString()}</span></p>
                 {acceptedRequest.contact && <div className="mt-4 border-t border-primary-100 pt-3 text-sm"><p className="font-semibold text-gray-900">Contact & Handoff</p><p className="mt-1 text-gray-600">{acceptedRequest.contact.ngo?.name} {acceptedRequest.contact.ngo?.phone || acceptedRequest.contact.ngo?.email ? `· ${acceptedRequest.contact.ngo.phone || acceptedRequest.contact.ngo.email}` : ''}</p><p className="mt-1 text-gray-600">{acceptedRequest.contact.handoffMessage}</p></div>}
               </div>
-              {acceptedRequest.donorCompletedAt ? <p className="mt-4 text-sm text-gray-600">Your completion confirmed. Waiting for the other party.</p> : <Button variant="success" className="w-full mt-4" onClick={handleComplete} disabled={actionLoading}>{actionLoading ? 'Processing...' : 'Mark as Completed'}</Button>}
+              {(completionState === 'viewer' || completionState === 'other' || completionState === 'both') && (
+                <p className="mt-4 text-sm text-gray-600">{completionMessage}</p>
+              )}
+              {(completionState === 'none' || completionState === 'other') && (
+                <Button variant="success" className="w-full mt-4" onClick={handleComplete} disabled={actionLoading}>{actionLoading ? 'Processing...' : 'Mark as Completed'}</Button>
+              )}
             </div>
           )}
 

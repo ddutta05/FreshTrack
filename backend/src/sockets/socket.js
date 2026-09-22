@@ -24,9 +24,17 @@ function removeSocket(userId, socketId) {
 }
 
 function initSocket(httpServer) {
+  const allowedOrigins = new Set((env.clientUrls || [env.clientUrl]).filter(Boolean));
+
   const io = new Server(httpServer, {
     cors: {
-      origin: env.clientUrl,
+      origin(origin, callback) {
+        if (!origin || allowedOrigins.has(origin)) {
+          return callback(null, true);
+        }
+
+        return callback(new Error("Not allowed by Socket.IO CORS"));
+      },
       credentials: true
     }
   });

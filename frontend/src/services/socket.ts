@@ -4,7 +4,7 @@ import type { Notification } from '@/types';
 let socket: Socket | null = null;
 let connectedToken: string | null = null;
 
-const SOCKET_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace(/\/api\/?$/, '');
+const SOCKET_BASE_URL = (import.meta.env.VITE_SOCKET_URL || import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace(/\/api\/?$/, '');
 
 export function connectSocket(token: string): Socket {
   if (socket && connectedToken === token) {

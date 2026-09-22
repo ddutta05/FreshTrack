@@ -1,5 +1,5 @@
 import { api, API_ENDPOINTS, clearAuthStorage } from './api';
-import type { User, Donation, DonationRequest, DonationOffer, Notification, UserRole, DonationStatus, GeoPoint, ChatRequest, ChatResponse, NgoProfile, NgoBrowseResult } from '@/types';
+import type { User, Donation, DonationRequest, DonationOffer, Notification, UserRole, DonationStatus, GeoPoint, ChatRequest, ChatResponse, NgoProfile, NgoBrowseResult, RegisterPayload } from '@/types';
 
 export interface ListQuery {
   page?: number;
@@ -105,17 +105,7 @@ export const authService = {
     return result.user;
   },
 
-  async register(payload: {
-    name?: string;
-    email: string;
-    password: string;
-    role: UserRole;
-    phone?: string;
-    organizationName?: string;
-    location?: string;
-    geoLocation?: GeoPoint;
-    acceptedCategories?: string[];
-  }): Promise<User> {
+  async register(payload: RegisterPayload): Promise<User> {
     const { data } = await api.post(API_ENDPOINTS.auth.register, payload);
     const result = unwrap<{ token: string; user: User }>(data);
     localStorage.setItem('freshtrack_token', result.token);

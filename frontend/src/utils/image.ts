@@ -1,4 +1,4 @@
-const API_ORIGIN = (import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace(/\/api\/?$/, '');
+const API_ORIGIN = (import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace(/\/api\/?$/, '').replace(/\/$/, '');
 
 function normalizeLegacyPath(image: string): string {
   const normalized = image.trim().replace(/\\/g, '/');

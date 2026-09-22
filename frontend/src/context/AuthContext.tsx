@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
-import type { User, UserRole } from '@/types';
+import type { RegisterPayload, User, UserRole } from '@/types';
 import { authService } from '@/services/services';
 import { setUnauthorizedHandler } from '@/services/api';
 import { disconnectSocket } from '@/services/socket';
@@ -8,14 +8,7 @@ interface AuthContextValue {
   user: User | null;
   loading: boolean;
   login: (email: string, password: string, role: UserRole, rememberMe?: boolean) => Promise<User>;
-  register: (payload: {
-    name?: string;
-    email: string;
-    password: string;
-    role: UserRole;
-    phone?: string;
-    organizationName?: string;
-  }) => Promise<User>;
+  register: (payload: RegisterPayload) => Promise<User>;
   logout: () => void;
   updateUser: (user: User) => void;
 }

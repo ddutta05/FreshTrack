@@ -8,7 +8,7 @@ function normalizeStoredImagePath(rawImage) {
   const value = rawImage.trim();
   if (!value) return undefined;
 
-  if (/^https?:\/\//i.test(value)) {
+  if (/^https?:\/\//i.test(value) || /^data:/i.test(value)) {
     return value;
   }
 

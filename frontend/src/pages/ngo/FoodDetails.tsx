@@ -10,8 +10,9 @@ import { LoadingSpinner, ErrorState } from '@/components/common/LoadingSpinner';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
 import { donationService, requestService } from '@/services/services';
-import type { Donation } from '@/types';
+import type { Donation, DonationRequest } from '@/types';
 import { getDonationImageUrl } from '@/utils/image';
+import { getCompletionDetails, getCompletionMessage } from '@/utils/workflow';
 
 export default function FoodDetails() {
   const { id } = useParams();
@@ -20,28 +21,36 @@ export default function FoodDetails() {
   const navigate = useNavigate();
 
   const [donation, setDonation] = useState<Donation | null>(null);
+  const [ngoRequests, setNgoRequests] = useState<DonationRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [message, setMessage] = useState('We would like to collect this donation for distribution.');
   const [submitting, setSubmitting] = useState(false);
-  const [alreadyRequested, setAlreadyRequested] = useState(false);
+  const [myRequest, setMyRequest] = useState<DonationRequest | null>(null);
   const [imageFailed, setImageFailed] = useState(false);
   const [modalImageFailed, setModalImageFailed] = useState(false);
 
   useEffect(() => {
     if (!id) return;
-    donationService
-      .getById(id)
-      .then((d) => setDonation(d))
-      .catch(() => setError(true))
-      .finally(() => setLoading(false));
 
-    if (user) {
-      requestService.getByNGO(user.id).then((reqs) => {
-        setAlreadyRequested(reqs.some((r) => r.donationId === id));
-      });
-    }
+    const load = async () => {
+      try {
+        const [donationData, ngoRequestData] = await Promise.all([
+          donationService.getById(id),
+          user ? requestService.getByNGO(user.id) : Promise.resolve([]),
+        ]);
+        setDonation(donationData);
+        setNgoRequests(ngoRequestData);
+        setMyRequest(ngoRequestData.find((request) => request.donationId === id && request.ngoId === user?.id) || null);
+      } catch {
+        setError(true);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    void load();
   }, [id, user]);
 
   const handleRequest = async () => {
@@ -54,10 +63,28 @@ export default function FoodDetails() {
       });
       toast('Request sent successfully!', 'success');
       setShowModal(false);
-      setAlreadyRequested(true);
+      const refreshed = await requestService.getByNGO(user.id);
+      setNgoRequests(refreshed);
+      setMyRequest(refreshed.find((request) => request.donationId === donation.id && request.ngoId === user.id) || null);
       navigate('/my-requests');
     } catch {
       toast('Failed to send request. Please try again.', 'error');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleComplete = async () => {
+    if (!user || !myRequest) return;
+    setSubmitting(true);
+    try {
+      await requestService.complete(myRequest.id);
+      const refreshed = await requestService.getByNGO(user.id);
+      setNgoRequests(refreshed);
+      setMyRequest(refreshed.find((request) => request.id === myRequest.id) || null);
+      toast('Completed', 'success');
+    } catch {
+      toast('Failed to complete request. Please try again.', 'error');
     } finally {
       setSubmitting(false);
     }
@@ -81,6 +108,24 @@ export default function FoodDetails() {
 
   const isAvailable = donation.status === 'available' || donation.status === 'pending';
   const imageUrl = getDonationImageUrl(donation.image);
+  const currentRequest = user?.role === 'ngo'
+    ? ngoRequests.find((request) => request.donationId === donation.id && request.ngoId === user.id) ?? null
+    : null;
+  const requestStatus = currentRequest?.status;
+  const hasPendingRequest = requestStatus === 'pending';
+  const hasAcceptedRequest = requestStatus === 'accepted';
+  const hasRejectedRequest = requestStatus === 'rejected';
+  const completionDetails = currentRequest && user?.role === 'ngo'
+    ? getCompletionDetails({
+        viewerRole: 'ngo',
+        viewerId: user.id,
+        donorId: currentRequest.donorId,
+        ngoId: currentRequest.ngoId,
+        donorCompletedAt: currentRequest.donorCompletedAt,
+        ngoCompletedAt: currentRequest.ngoCompletedAt,
+      })
+    : null;
+  const completionMessage = completionDetails ? getCompletionMessage({ completionState: completionDetails.state, viewerRole: 'ngo' }) : '';
 
   return (
     <DashboardLayout>
@@ -89,7 +134,6 @@ export default function FoodDetails() {
       </Link>
 
       <div className="grid lg:grid-cols-3 gap-6">
-        {/* Left: Image + Info */}
         <div className="lg:col-span-2 space-y-6">
           <div className="card overflow-hidden">
             <div className="w-full h-72 bg-gray-100">
@@ -137,23 +181,53 @@ export default function FoodDetails() {
           </div>
         </div>
 
-        {/* Right: Action panel */}
         <div>
           <div className="card p-5 sticky top-20">
-            <h3 className="font-semibold text-gray-900 mb-4">Request This Donation</h3>
-            {alreadyRequested ? (
+            {hasAcceptedRequest && currentRequest ? (
+              <div className="space-y-4 text-sm text-gray-700">
+                <h3 className="font-semibold text-gray-900">Accepted Request</h3>
+                <p><span className="text-gray-500">Donor:</span> <span className="font-medium text-gray-900">{currentRequest.donorName || 'Donor'}</span></p>
+                <p><span className="text-gray-500">Message:</span> <span className="text-gray-700">{currentRequest.message}</span></p>
+                <p><span className="text-gray-500">Requested:</span> <span className="text-gray-700">{new Date(currentRequest.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span></p>
+
+                {currentRequest.contact && (
+                  <div className="mt-4 border-t border-gray-200 pt-4">
+                    <p className="font-semibold text-gray-900">Contact & Handoff</p>
+                    <p className="mt-1 text-gray-700">{currentRequest.contact.donor?.name || 'Donor'} {currentRequest.contact.donor?.phone || currentRequest.contact.donor?.email ? `· ${currentRequest.contact.donor.phone || currentRequest.contact.donor.email}` : ''}</p>
+                    {currentRequest.contact.donor?.phone && <p className="text-gray-700">Phone: {currentRequest.contact.donor.phone}</p>}
+                    {currentRequest.contact.donor?.email && <p className="text-gray-700">Email: {currentRequest.contact.donor.email}</p>}
+                    {currentRequest.contact.handoffMessage && <p className="mt-2 text-gray-600">{currentRequest.contact.handoffMessage}</p>}
+                  </div>
+                )}
+
+                {completionDetails && completionDetails.state !== 'both' && (
+                  <p className="mt-3 text-sm text-gray-600">{completionMessage}</p>
+                )}
+                {completionDetails && (completionDetails.state === 'none' || completionDetails.state === 'other') && (
+                  <Button variant="success" className="w-full mt-2" onClick={handleComplete} disabled={submitting}>
+                    {submitting ? 'Processing...' : 'Mark as Completed'}
+                  </Button>
+                )}
+                <Link to="/my-requests" className="btn-secondary w-full mt-2">View My Requests</Link>
+              </div>
+            ) : hasPendingRequest ? (
               <div className="text-center py-6">
                 <div className="w-14 h-14 rounded-full bg-primary-100 flex items-center justify-center mx-auto mb-3">
                   <CheckCircle2 className="w-7 h-7 text-primary-600" />
                 </div>
-                <p className="font-medium text-gray-900 mb-1">Request Sent</p>
-                <p className="text-sm text-gray-500">You've already requested this donation. Check your requests for updates.</p>
-                <Link to="/my-requests" className="btn-secondary w-full mt-4">
-                  View My Requests
-                </Link>
+                <p className="font-medium text-gray-900 mb-1">Pending</p>
+                <p className="text-sm text-gray-500">Request Sent</p>
+                <p className="text-sm text-gray-500 mt-2">You&apos;ve already requested this donation.</p>
+                <Link to="/my-requests" className="btn-secondary w-full mt-4">View My Requests</Link>
+              </div>
+            ) : hasRejectedRequest ? (
+              <div className="text-center py-6">
+                <p className="font-medium text-gray-900 mb-2">Rejected</p>
+                <Link to="/my-requests" className="btn-secondary w-full mt-4">View My Requests</Link>
               </div>
             ) : isAvailable ? (
               <>
+                <h3 className="font-semibold text-gray-900 mb-4">Request This Donation</h3>
                 <p className="text-sm text-gray-600 mb-4">
                   Click below to request this donation. You can add a message to the donor.
                 </p>
@@ -172,7 +246,6 @@ export default function FoodDetails() {
         </div>
       </div>
 
-      {/* Request Modal */}
       <Modal
         open={showModal}
         onClose={() => setShowModal(false)}

@@ -67,7 +67,7 @@ export default function MyRequests() {
       return (
         <div className="flex flex-col gap-2 text-left">
           <span className="text-xs font-medium text-blue-700">Accepted</span>
-          <Button size="sm" variant="success" onClick={() => handleComplete(request.id)} disabled={actionLoading}><CheckCircle2 className="w-4 h-4" /> Mark Completed</Button>
+          <Link to={`/food/${request.donationId}`} className="text-xs font-medium text-primary-700 hover:text-primary-800">View Donation</Link>
         </div>
       );
     }
@@ -97,7 +97,7 @@ export default function MyRequests() {
       return (
         <div className="flex flex-col gap-2 text-left">
           <span className="text-xs font-medium text-blue-700">Accepted</span>
-          <Button size="sm" variant="success" onClick={() => handleOfferComplete(offer.id)} disabled={actionLoading}><CheckCircle2 className="w-4 h-4" /> Mark Completed</Button>
+          <Link to={`/offers/${offer.id}`} className="text-xs font-medium text-primary-700 hover:text-primary-800">View Offer</Link>
         </div>
       );
     }
@@ -237,9 +237,6 @@ export default function MyRequests() {
                     <td className="px-6 py-4"><StatusBadge status={r.status} type="request" /></td>
                     <td className="px-6 py-4 text-right">
                       {renderRequestAction(r)}
-                      {r.contact && ['accepted', 'completed'].includes(r.status) && (
-                        <p className="mt-2 text-xs text-gray-600">Contact & Handoff: {r.contact.donor?.name} {r.contact.donor?.phone || r.contact.donor?.email ? `· ${r.contact.donor.phone || r.contact.donor.email}` : ''}. {r.contact.handoffMessage}</p>
-                      )}
                     </td>
                   </tr>
                 ))}
@@ -273,9 +270,6 @@ export default function MyRequests() {
                     <td className="px-6 py-4"><StatusBadge status={offer.status} type="request" /></td>
                     <td className="px-6 py-4 text-right">
                       {renderOfferAction(offer)}
-                      {offer.contact && ['accepted', 'completed'].includes(offer.status) && (
-                        <p className="mt-2 text-xs text-gray-600">Contact & Handoff: {offer.contact.donor?.name} {offer.contact.donor?.phone || offer.contact.donor?.email ? `· ${offer.contact.donor.phone || offer.contact.donor.email}` : ''}. {offer.contact.handoffMessage}</p>
-                      )}
                     </td>
                   </tr>
                 ))}

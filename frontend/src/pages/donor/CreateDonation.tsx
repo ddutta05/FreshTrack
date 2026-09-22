@@ -148,7 +148,7 @@ export default function CreateDonation() {
         </Link>
 
         <h1 className="text-2xl font-bold text-gray-900 mb-1">{targetNgoId ? `Making a Direct Offer to ${targetNgoName}` : 'Donate Food'}</h1>
-        <p className="text-gray-500 mb-6">Fill in the same donation details used for every FreshTrack food post.</p>
+        <p className="text-gray-500 mb-6">Share surplus food with local NGOs.</p>
 
         {error && (
           <div className="mb-4 px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">
@@ -159,7 +159,7 @@ export default function CreateDonation() {
         <form onSubmit={handleSubmit} className="card p-6 space-y-5">
           <Input
             label="Food Name"
-            placeholder="e.g. Fresh Vegetable Curry"
+            placeholder="e.g. Rice and vegetables"
             value={form.foodName}
             onChange={(e) => handleChange('foodName', e.target.value)}
             required
@@ -172,14 +172,13 @@ export default function CreateDonation() {
                 {FOOD_CATEGORIES.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
                 {form.category && !FOOD_CATEGORIES.includes(form.category as typeof FOOD_CATEGORIES[number]) && <option value={form.category}>{form.category}</option>}
               </Select>
-              {otherSelected && <div className="mt-2 flex gap-2"><Input aria-label="Custom category" placeholder="e.g. Chocolates" value={customCategory} onChange={(e) => setCustomCategory(e.target.value)} /><Button type="button" size="sm" onClick={() => { if (customCategory.trim()) { handleChange('category', customCategory.trim()); setCustomCategory(''); setOtherSelected(false); } }}>Add</Button></div>}
+              {otherSelected && <div className="mt-2 flex gap-2"><Input aria-label="Custom category" placeholder="Custom category" value={customCategory} onChange={(e) => setCustomCategory(e.target.value)} /><Button type="button" size="sm" onClick={() => { if (customCategory.trim()) { handleChange('category', customCategory.trim()); setCustomCategory(''); setOtherSelected(false); } }}>Add</Button></div>}
             </div>
             <Input
               label="Quantity Display"
-              placeholder="e.g. 15 servings, 5 kg"
+              placeholder="e.g. 15 servings"
               value={form.quantity}
               onChange={(e) => handleChange('quantity', e.target.value)}
-              hint="Free-text description shown on donation cards."
               required
             />
           </div>
@@ -198,7 +197,7 @@ export default function CreateDonation() {
                 type="number"
                 min="0"
                 step="any"
-                placeholder="e.g. 15"
+                placeholder="Quantity"
                 value={form.quantityValue}
                 onChange={(e) => handleChange('quantityValue', e.target.value)}
               />
@@ -219,7 +218,7 @@ export default function CreateDonation() {
 
           <Textarea
             label="Description"
-            placeholder="Describe the food — what it is, how it was prepared, any allergens, etc."
+            placeholder="Preparation and allergen details"
             value={form.description}
             onChange={(e) => handleChange('description', e.target.value)}
             required
@@ -235,7 +234,7 @@ export default function CreateDonation() {
             />
             <Input
               label="Pickup Location Address"
-              placeholder="e.g. Downtown Community Center, 123 Main St"
+              placeholder="Area or pickup location"
               value={form.location}
               onChange={(e) => handleChange('location', e.target.value)}
               required

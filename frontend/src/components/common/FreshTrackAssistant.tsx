@@ -33,6 +33,13 @@ export default function FreshTrackAssistant() {
   const [recommendations, setRecommendations] = useState<Record<number, ChatRecommendation[]>>({});
   const [loading, setLoading] = useState(false);
   const endOfMessagesRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const restoreFocus = () => {
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+    });
+  };
 
   useEffect(() => {
     if (!user || user.role === 'admin') return;
@@ -53,6 +60,12 @@ export default function FreshTrackAssistant() {
   useEffect(() => {
     endOfMessagesRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, loading]);
+
+  useEffect(() => {
+    if (open) {
+      restoreFocus();
+    }
+  }, [open]);
 
   if (!user || user.role === 'admin') return null;
 
@@ -80,6 +93,7 @@ export default function FreshTrackAssistant() {
       ]);
     } finally {
       setLoading(false);
+      restoreFocus();
     }
   };
 
@@ -139,6 +153,7 @@ export default function FreshTrackAssistant() {
           <div className="border-t border-gray-200 bg-white p-3">
             <div className="flex items-end gap-2">
               <textarea
+                ref={textareaRef}
                 value={input}
                 onChange={(event) => setInput(event.target.value)}
                 onKeyDown={handleKeyDown}

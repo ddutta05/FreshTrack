@@ -10,12 +10,17 @@ const { toDonationClient, expireDonationsAndNotify } = require("../services/dona
 const { createOffer, toOfferClient } = require("../services/offer.service");
 const { getPublicImpactStats } = require("../services/admin.service");
 const { normalizeStoredImagePath } = require("../utils/imagePath");
+const { processImageBuffer, isAllowedImageMimeType } = require("../utils/imageStorage");
 const { parseGeoLocation } = require("../validators/geo.validator");
 const { createNotification } = require("../services/notification.service");
 
-function resolveIncomingImage(req) {
-  if (req.file?.filename) {
-    return `/uploads/${req.file.filename}`;
+async function resolveIncomingImage(req) {
+  if (req.file) {
+    if (!isAllowedImageMimeType(req.file.mimetype)) {
+      throw new AppError("Unsupported image type", 422, "INVALID_IMAGE_MIME_TYPE");
+    }
+
+    return processImageBuffer(req.file.buffer, req.file.mimetype, req.file.originalname);
   }
 
   if (req.body.image === undefined) {
@@ -137,7 +142,7 @@ const createDonation = asyncHandler(async (req, res) => {
     throw new AppError("availableUntil must be a future date", 422, "INVALID_AVAILABLE_UNTIL");
   }
 
-  const imagePath = resolveIncomingImage(req);
+  const imagePath = await resolveIncomingImage(req);
 
   let geoLocation = parseGeoLocation(req.body.geoLocation);
   if (!geoLocation || !geoLocation.coordinates) {
@@ -256,7 +261,7 @@ const updateDonation = asyncHandler(async (req, res) => {
     donation.quantityUnit = req.body.quantityUnit || undefined;
   }
 
-  const imagePath = resolveIncomingImage(req);
+  const imagePath = await resolveIncomingImage(req);
   if (imagePath !== undefined) {
     donation.image = imagePath;
   }
