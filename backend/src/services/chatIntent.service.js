@@ -1,7 +1,8 @@
 const { USER_ROLES } = require("../utils/constants");
 
 const RECOMMENDATION_WORDS = /\b(find|show|search|nearby|available|looking for|look for)\b/i;
-const FAQ_WORDS = /\b(how do i|how can i|what is|why can't|why can\x27t|how does|explain)\b/i;
+const FAQ_WORDS = /\b(how do i|how can i|what is|why can't|why can\x27t|why was|why were|why is|why are|why did|why does|how does|explain)\b/i;
+const REASON_FOLLOW_UP_WORDS = /\b(?:why|what|which)\b.*\b(?:recommended|not recommended|not found|no result|result|match(?:ed|ing)?|returned|not shown|shown|was not|wasn't|were not|didn't|did not|couldn't|could not)\b/i;
 const TARGET_WORDS = {
   ngo: /\bngos?\b/i,
   donation: /\b(donations?|food)\b/i,
@@ -26,14 +27,22 @@ function normalizeCategory(value) {
 
 function categoryFromText(text) {
   const source = String(text || "");
-  const categoryPhrase = source.match(/\b(?:for|accepts?|category)\s+([a-z][a-z\s-]{1,40})/i)?.[1] || source;
+  const explicitCategory = source.match(/\b(?:for|accepts?|category)\s+([a-z][a-z\s-]{1,80})/i);
+  const categoryPhrase = explicitCategory?.[1] || source;
   const words = categoryPhrase
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/[^a-z0-9\s-]/gi, " ")
     .split(/\s+/)
-    .filter((word) => word && !STOP_WORDS.has(word) && !/^\d+(?:\.\d+)?$/.test(word));
-  const candidate = words.slice(-2).join(" ");
-  return candidate && !["which", "which are", "near me", "nearby"].includes(candidate) ? candidate : null;
+    .filter((word) => {
+      const normalized = word.toLowerCase();
+      return word &&
+        (!STOP_WORDS.has(normalized) || (normalized === "food" && explicitCategory)) &&
+        !/^\d+(?:\.\d+)?$/.test(word);
+    });
+  const candidate = words.join(" ");
+  if (candidate.toLowerCase() === "food" && !explicitCategory) return null;
+  return candidate && !["which", "which are", "near me", "nearby"].includes(candidate.toLowerCase())
+    ? candidate
+    : null;
 }
 
 function targetFromText(text) {
@@ -62,7 +71,7 @@ function extractIntent(message, history = []) {
     ? categoryFromText(text)
     : categoryFromText(text);
 
-  if (/^why\s+(not|no)\b/i.test(text)) {
+  if (/^why\s+(not|no)\b/i.test(text) || REASON_FOLLOW_UP_WORDS.test(text)) {
     return { kind: "general", target: "none", category: null, maxDistanceKm: null };
   }
 
@@ -95,7 +104,20 @@ function capabilityMessage(role, target) {
   if (role === USER_ROLES.NGO && target === "ngo") {
     return "I can help you find available food donations, but I can't search for other NGOs from an NGO account.";
   }
+  if (role === USER_ROLES.ADMIN && ["donor", "ngo", "donation"].includes(target)) {
+    return "I'm logged in with your admin account, so I can help with platform administration and general FreshTrack guidance, but I can't run donor or NGO recommendation searches.";
+  }
   return null;
 }
 
-module.exports = { extractIntent, capabilityMessage, normalizeCategory };
+function isRecommendationFollowUp(message) {
+  const text = String(message || "").trim();
+  return /^why\s+(?:not|no)\b/i.test(text) || REASON_FOLLOW_UP_WORDS.test(text);
+}
+
+module.exports = {
+  extractIntent,
+  capabilityMessage,
+  normalizeCategory,
+  isRecommendationFollowUp
+};

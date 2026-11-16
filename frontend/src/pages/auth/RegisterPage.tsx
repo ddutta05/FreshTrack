@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Leaf, Eye, EyeOff, MapPin, Navigation } from 'lucide-react';
 import Input from '@/components/common/Input';
 import Select from '@/components/common/Select';
@@ -7,25 +7,29 @@ import Button from '@/components/common/Button';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
 import { FOOD_CATEGORIES, type GeoPoint, type UserRole } from '@/types';
-import { ApiError } from '@/services/api';
+import { ApiError, normalizeApiErrorMessage } from '@/services/api';
 
 export default function RegisterPage() {
   const { register } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [role, setRole] = useState<UserRole>('donor');
+  const [role, setRole] = useState<UserRole>(searchParams.get('role') === 'ngo' ? 'ngo' : 'donor');
   const [phone, setPhone] = useState('');
   const [orgName, setOrgName] = useState('');
   const [location, setLocation] = useState('');
   const [geoLocation, setGeoLocation] = useState<GeoPoint | null>(null);
+  const [manualLongitude, setManualLongitude] = useState('');
+  const [manualLatitude, setManualLatitude] = useState('');
   const [acceptedCategories, setAcceptedCategories] = useState<string[]>([]);
   const [categoryChoice, setCategoryChoice] = useState('');
   const [customCategory, setCustomCategory] = useState('');
+  const [customCategoryError, setCustomCategoryError] = useState('');
   const [locationError, setLocationError] = useState('');
   const [locating, setLocating] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -82,16 +86,37 @@ export default function RegisterPage() {
       setError('Location is required for NGO accounts.');
       return;
     }
-    if (role === 'ngo' && !geoLocation) {
-      setError('Use your current location before registering so donors can discover your NGO.');
-      return;
-    }
     if (role === 'ngo' && acceptedCategories.length === 0) {
       setError('Select at least one accepted food category.');
       return;
     }
     if (trimmedPhone.length > 30) {
       setError('Phone must be 30 characters or less.');
+      return;
+    }
+
+    let registrationGeoLocation = geoLocation;
+    if (role === 'ngo' && (manualLongitude.trim() || manualLatitude.trim())) {
+      if (!manualLongitude.trim() || !manualLatitude.trim()) {
+        setError('Enter both longitude and latitude for the base location.');
+        return;
+      }
+
+      const longitude = Number(manualLongitude);
+      const latitude = Number(manualLatitude);
+      if (!Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
+        setError('Longitude must be between -180 and 180.');
+        return;
+      }
+      if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90) {
+        setError('Latitude must be between -90 and 90.');
+        return;
+      }
+      registrationGeoLocation = { type: 'Point', coordinates: [longitude, latitude] };
+    }
+
+    if (role === 'ngo' && !registrationGeoLocation) {
+      setError('Use My Location or enter longitude and latitude so donors can discover your NGO.');
       return;
     }
 
@@ -105,7 +130,7 @@ export default function RegisterPage() {
         phone: trimmedPhone || undefined,
         organizationName: role === 'ngo' ? trimmedOrgName : undefined,
         location: role === 'ngo' ? trimmedLocation : undefined,
-        geoLocation: role === 'ngo' ? geoLocation : undefined,
+        geoLocation: role === 'ngo' ? registrationGeoLocation : undefined,
         acceptedCategories: role === 'ngo' ? acceptedCategories : undefined,
       });
       toast(`Account created! Welcome, ${user.name.split(' ')[0]}.`, 'success');
@@ -114,7 +139,7 @@ export default function RegisterPage() {
       if (err instanceof ApiError && err.details?.length) {
         setError(err.details[0].message);
       } else {
-        setError(err instanceof Error ? err.message : 'Registration failed');
+        setError(normalizeApiErrorMessage(err));
       }
     } finally {
       setLoading(false);
@@ -130,7 +155,11 @@ export default function RegisterPage() {
     setLocationError('');
     navigator.geolocation.getCurrentPosition(
       ({ coords }) => {
-        setGeoLocation({ type: 'Point', coordinates: [Number(coords.longitude.toFixed(6)), Number(coords.latitude.toFixed(6))] });
+        const longitude = Number(coords.longitude.toFixed(6));
+        const latitude = Number(coords.latitude.toFixed(6));
+        setGeoLocation({ type: 'Point', coordinates: [longitude, latitude] });
+        setManualLongitude(String(longitude));
+        setManualLatitude(String(latitude));
         setLocating(false);
       },
       (geoError) => {
@@ -151,8 +180,19 @@ export default function RegisterPage() {
   };
 
   const addCustomCategory = () => {
+    if (!customCategory.trim()) {
+      setCustomCategoryError('Enter a custom category.');
+      return;
+    }
+
     addCategory(customCategory);
     setCustomCategory('');
+    setCustomCategoryError('');
+  };
+
+  const handleRoleChange = (nextRole: UserRole) => {
+    setRole(nextRole);
+    setSearchParams({ role: nextRole }, { replace: true });
   };
 
   return (
@@ -168,6 +208,15 @@ export default function RegisterPage() {
             </Link>
             <h1 className="text-2xl font-bold text-gray-900">Create your account</h1>
             <p className="text-gray-500 mt-1">Join FreshTrack and start making a difference</p>
+          </div>
+
+          <div className="mb-6 grid grid-cols-2 gap-2 rounded-xl bg-gray-100 p-1">
+            <Link to={`/login?role=${role}`} className="rounded-lg px-3 py-2 text-center text-sm font-medium text-gray-500 hover:text-gray-700 transition-colors bg-white shadow-sm text-primary-700 ring-1 ring-primary-200">
+              Log In
+            </Link>
+            <Link to="/register" className="rounded-lg px-3 py-2 text-center text-sm font-medium text-gray-500 hover:text-gray-700 transition-colors">
+              Create Account
+            </Link>
           </div>
 
           <div className="card p-6 sm:p-8">
@@ -209,6 +258,8 @@ export default function RegisterPage() {
                   />
                   <button
                     type="button"
+                    aria-label={showPassword ? 'Hide passwords' : 'Show passwords'}
+                    aria-pressed={showPassword}
                     onClick={() => setShowPassword(!showPassword)}
                     className="absolute right-3 top-9 text-gray-400 hover:text-gray-600"
                   >
@@ -228,7 +279,7 @@ export default function RegisterPage() {
               <Select
                 label="Role"
                 value={role}
-                onChange={(e) => setRole(e.target.value as UserRole)}
+                onChange={(e) => handleRoleChange(e.target.value as UserRole)}
               >
                 <option value="donor">Donor — I have surplus food to donate</option>
                 <option value="ngo">NGO — I collect and distribute food</option>
@@ -260,7 +311,7 @@ export default function RegisterPage() {
                   />
                   <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
                     <label className="label flex items-center gap-1.5"><MapPin className="h-4 w-4 text-primary-600" /> Base Location</label>
-                    <p className="mb-2 text-xs text-gray-500">Required for NGO discovery. Allow browser location access to continue.</p>
+                    <p className="mb-2 text-xs text-gray-500">Required for NGO discovery. Use browser location or enter coordinates manually.</p>
                     {geoLocation ? (
                       <p className="mb-2 text-xs font-medium text-primary-700">Base location captured.</p>
                     ) : (
@@ -270,6 +321,29 @@ export default function RegisterPage() {
                       <Navigation className="h-3.5 w-3.5" /> {locating ? 'Detecting Location...' : 'Use My Location'}
                     </Button>
                     {locationError && <p className="mt-2 text-xs text-red-600">{locationError}</p>}
+                    <div className="mt-3 grid grid-cols-2 gap-3">
+                      <Input
+                        label="Longitude"
+                        type="number"
+                        min={-180}
+                        max={180}
+                        step="any"
+                        placeholder="-73.9857"
+                        value={manualLongitude}
+                        onChange={(e) => setManualLongitude(e.target.value)}
+                      />
+                      <Input
+                        label="Latitude"
+                        type="number"
+                        min={-90}
+                        max={90}
+                        step="any"
+                        placeholder="40.7484"
+                        value={manualLatitude}
+                        onChange={(e) => setManualLatitude(e.target.value)}
+                      />
+                    </div>
+                    <p className="mt-1 text-xs text-gray-500">Enter decimal degrees in longitude, latitude order.</p>
                   </div>
                   <div>
                     <label className="label">Accepted Food Categories</label>
@@ -291,7 +365,10 @@ export default function RegisterPage() {
                       </select>
                       {categoryChoice === 'Other' && (
                         <div className="flex w-full gap-2 sm:flex-[1.5]">
-                          <Input className="min-w-0 flex-1 text-sm" placeholder="Custom category" value={customCategory} onChange={(e) => setCustomCategory(e.target.value)} />
+                          <Input className="min-w-0 flex-1 text-sm" placeholder="Custom category" value={customCategory} error={customCategoryError} onChange={(e) => {
+                            setCustomCategory(e.target.value);
+                            if (e.target.value.trim()) setCustomCategoryError('');
+                          }} />
                           <Button type="button" size="sm" onClick={addCustomCategory}>Add</Button>
                         </div>
                       )}

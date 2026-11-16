@@ -7,12 +7,16 @@ import StatusBadge from '@/components/common/StatusBadge';
 import { EmptyState, ErrorState, TableRowSkeleton } from '@/components/common/LoadingSpinner';
 import { useToast } from '@/context/ToastContext';
 import { adminService, donationService } from '@/services/services';
+import { normalizeApiErrorMessage } from '@/services/api';
 import type { Donation } from '@/types';
 import { getDonationImageUrl } from '@/utils/image';
 
 export default function AdminDonations() {
   const { toast } = useToast();
   const [donations, setDonations] = useState<Donation[]>([]);
+  const [page, setPage] = useState(1);
+  const [pageCount, setPageCount] = useState(1);
+  const [totalDonations, setTotalDonations] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [search, setSearch] = useState('');
@@ -21,26 +25,50 @@ export default function AdminDonations() {
   const [confirmDelete, setConfirmDelete] = useState<Donation | null>(null);
 
   useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setError(false);
     adminService
-      .getDonations()
-      .then((data) => setDonations(data))
-      .catch(() => setError(true))
-      .finally(() => setLoading(false));
-  }, []);
+      .getDonationsPage({ page, limit: 10, search: search.trim() || undefined })
+      .then((result) => {
+        if (!active) return;
+        if (page > result.pagination.pages) {
+          setPage(result.pagination.pages);
+          return;
+        }
+        setDonations(result.items);
+        setPageCount(result.pagination.pages);
+        setTotalDonations(result.pagination.total);
+      })
+      .catch(() => {
+        if (active) setError(true);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [page, search]);
 
-  const filtered = donations.filter(
-    (d) => d.foodName.toLowerCase().includes(search.toLowerCase()) || d.location.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = donations;
   const selectedImageUrl = selectedDonation ? getDonationImageUrl(selectedDonation.image) : undefined;
 
   const handleRemove = async (donation: Donation) => {
     try {
       await donationService.remove(donation.id);
-      setDonations((prev) => prev.filter((d) => d.id !== donation.id));
+      const updated = await adminService.getDonationsPage({ page, limit: 10, search: search.trim() || undefined });
+      if (page > updated.pagination.pages) {
+        setPage(updated.pagination.pages);
+      } else {
+        setDonations(updated.items);
+        setPageCount(updated.pagination.pages);
+        setTotalDonations(updated.pagination.total);
+      }
       toast('Donation removed.', 'success');
       setConfirmDelete(null);
-    } catch {
-      toast('Failed to remove donation.', 'error');
+    } catch (err) {
+      toast(normalizeApiErrorMessage(err), 'error');
     }
   };
 
@@ -63,7 +91,10 @@ export default function AdminDonations() {
             className="input pl-10"
             placeholder="Search by food name or location..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
           />
         </div>
       </div>
@@ -91,9 +122,10 @@ export default function AdminDonations() {
       ) : filtered.length === 0 ? (
         <EmptyState icon={Package} title="No donations found" message="No donations match your search." />
       ) : (
-        <div className="card overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full">
+        <>
+          <div className="card overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Food</th>
@@ -133,20 +165,37 @@ export default function AdminDonations() {
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center justify-end gap-2">
-                        <Button size="sm" variant="ghost" onClick={() => openDonation(d)}>
+                        <Button size="sm" variant="ghost" aria-label={`View details for ${d.foodName}`} onClick={() => openDonation(d)}>
                           <Eye className="w-4 h-4" />
                         </Button>
-                        <Button size="sm" variant="danger" onClick={() => setConfirmDelete(d)}>
+                        <Button size="sm" variant="danger" aria-label={['accepted', 'completed'].includes(d.status) ? 'Cannot remove accepted or completed donation' : `Remove ${d.foodName}`} disabled={['accepted', 'completed'].includes(d.status)} title={['accepted', 'completed'].includes(d.status) ? 'Accepted or completed donations cannot be removed.' : 'Remove donation'} onClick={() => setConfirmDelete(d)} className="disabled:cursor-not-allowed disabled:opacity-50">
                           <Trash2 className="w-4 h-4" />
                         </Button>
                       </div>
+                      {['accepted', 'completed'].includes(d.status) && <p className="mt-1 text-right text-xs text-gray-500">Accepted or completed donations cannot be removed.</p>}
                     </td>
                   </tr>
                 ))}
               </tbody>
-            </table>
+              </table>
+            </div>
           </div>
-        </div>
+          {pageCount > 1 && (
+            <div className="mt-4 flex items-center justify-between">
+              <p className="text-sm text-gray-500">
+                Page {page} of {pageCount} · {totalDonations} donations
+              </p>
+              <div className="flex gap-2">
+                <Button variant="secondary" disabled={page <= 1 || loading} onClick={() => setPage((current) => current - 1)}>
+                  Previous
+                </Button>
+                <Button variant="secondary" disabled={page >= pageCount || loading} onClick={() => setPage((current) => current + 1)}>
+                  Next
+                </Button>
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {/* View Modal */}
@@ -174,7 +223,7 @@ export default function AdminDonations() {
             <DetailRow label="Quantity" value={selectedDonation.quantity} />
             <DetailRow label="Donor" value={selectedDonation.donorName} />
             <DetailRow label="Location" value={selectedDonation.location} />
-            <DetailRow label="Status" value={selectedDonation.status} />
+            <DetailRow label="Status" value={selectedDonation.status.charAt(0).toUpperCase() + selectedDonation.status.slice(1)} />
             <DetailRow label="Available Until" value={new Date(selectedDonation.availableUntil).toLocaleDateString()} />
             <DetailRow label="Posted" value={new Date(selectedDonation.createdAt).toLocaleDateString()} />
             <div className="pt-2">

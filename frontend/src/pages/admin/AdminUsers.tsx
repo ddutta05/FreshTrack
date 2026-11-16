@@ -6,11 +6,15 @@ import Modal from '@/components/common/Modal';
 import { EmptyState, ErrorState, TableRowSkeleton } from '@/components/common/LoadingSpinner';
 import { useToast } from '@/context/ToastContext';
 import { userService } from '@/services/services';
+import { normalizeApiErrorMessage } from '@/services/api';
 import type { User } from '@/types';
 
 export default function AdminUsers() {
   const { toast } = useToast();
   const [users, setUsers] = useState<User[]>([]);
+  const [page, setPage] = useState(1);
+  const [pageCount, setPageCount] = useState(1);
+  const [totalUsers, setTotalUsers] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [search, setSearch] = useState('');
@@ -19,16 +23,33 @@ export default function AdminUsers() {
   const [actionUserId, setActionUserId] = useState<string | null>(null);
 
   useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setError(false);
     userService
-      .getAll()
-      .then((data) => setUsers(data))
-      .catch(() => setError(true))
-      .finally(() => setLoading(false));
-  }, []);
+      .getAllPage({ page, limit: 10, search: search.trim() || undefined })
+      .then((result) => {
+        if (!active) return;
+        if (page > result.pagination.pages) {
+          setPage(result.pagination.pages);
+          return;
+        }
+        setUsers(result.items);
+        setPageCount(result.pagination.pages);
+        setTotalUsers(result.pagination.total);
+      })
+      .catch(() => {
+        if (active) setError(true);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [page, search]);
 
-  const filtered = users.filter(
-    (u) => u.name.toLowerCase().includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = users;
 
   const handleDisable = async (userId: string) => {
     setActionUserId(userId);
@@ -39,11 +60,14 @@ export default function AdminUsers() {
       } else {
         await userService.disable(userId);
       }
-      const updated = await userService.getAll();
-      setUsers(updated);
+      const updated = await userService.getAllPage({ page, limit: 10, search: search.trim() || undefined });
+      setUsers(updated.items);
+      setPageCount(updated.pagination.pages);
+      setTotalUsers(updated.pagination.total);
+      if (page > updated.pagination.pages) setPage(updated.pagination.pages);
       toast('User status updated.', 'success');
-    } catch {
-      toast('Failed to update user status.', 'error');
+    } catch (err) {
+      toast(normalizeApiErrorMessage(err), 'error');
     } finally {
       setActionUserId(null);
     }
@@ -68,7 +92,10 @@ export default function AdminUsers() {
             className="input pl-10"
             placeholder="Search by name or email..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
           />
         </div>
       </div>
@@ -96,9 +123,10 @@ export default function AdminUsers() {
       ) : filtered.length === 0 ? (
         <EmptyState icon={Users} title="No users found" message="No users match your search." />
       ) : (
-        <div className="card overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full">
+        <>
+          <div className="card overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Name</th>
@@ -132,7 +160,7 @@ export default function AdminUsers() {
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center justify-end gap-2">
-                        <Button size="sm" variant="ghost" onClick={() => openUser(u)}>
+                        <Button size="sm" variant="ghost" aria-label={`View details for ${u.name}`} onClick={() => openUser(u)}>
                           <Eye className="w-4 h-4" />
                         </Button>
                         {u.role !== 'admin' && (
@@ -145,9 +173,25 @@ export default function AdminUsers() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+              </table>
+            </div>
           </div>
-        </div>
+          {pageCount > 1 && (
+            <div className="mt-4 flex items-center justify-between">
+              <p className="text-sm text-gray-500">
+                Page {page} of {pageCount} · {totalUsers} users
+              </p>
+              <div className="flex gap-2">
+                <Button variant="secondary" disabled={page <= 1 || loading} onClick={() => setPage((current) => current - 1)}>
+                  Previous
+                </Button>
+                <Button variant="secondary" disabled={page >= pageCount || loading} onClick={() => setPage((current) => current + 1)}>
+                  Next
+                </Button>
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       <Modal

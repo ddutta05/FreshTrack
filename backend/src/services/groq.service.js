@@ -1,15 +1,22 @@
+const crypto = require("crypto");
 const Groq = require("groq-sdk");
 const env = require("../config/env");
 const { AppError } = require("../utils/errors");
 const { USER_ROLES } = require("../utils/constants");
 const recommendationService = require("./recommendation.service");
-const { extractIntent, capabilityMessage } = require("./chatIntent.service");
+const {
+  extractIntent,
+  capabilityMessage,
+  isRecommendationFollowUp,
+  normalizeCategory
+} = require("./chatIntent.service");
 
 const DEFAULT_MODEL = "openai/gpt-oss-20b";
 const MAX_TOOL_ROUNDS = 3;
 const MAX_HISTORY_MESSAGES = 10;
 const MAX_HISTORY_CONTENT_LENGTH = 2000;
 const MAX_HISTORY_TOTAL_LENGTH = 10000;
+const RECOMMENDATION_CONTEXT_TTL_MS = 2 * 60 * 60 * 1000;
 
 const SYSTEM_INSTRUCTION = `You are the FreshTrack Assistant, a friendly and concise assistant helping donors and NGOs use the FreshTrack food donation platform.
 
@@ -305,6 +312,215 @@ function buildUiRecommendations(result) {
   });
 }
 
+function signRecommendationContext(result, intent, user) {
+  if (![USER_ROLES.DONOR, USER_ROLES.NGO].includes(user?.role)) return undefined;
+
+  const target = user.role === USER_ROLES.DONOR && intent.target === "ngo"
+    ? "ngo"
+    : user.role === USER_ROLES.NGO && intent.target === "donation"
+      ? "donation"
+      : "none";
+  const ids = target === "ngo"
+    ? result.map((candidate) => candidate.ngoId)
+    : target === "donation"
+      ? result.map((candidate) => candidate.donationId)
+      : [];
+  const payload = {
+    userId: user.id,
+    role: user.role,
+    target,
+    ids,
+    category: target !== "none" ? intent.category || null : null,
+    maxDistanceKm: target !== "none" ? intent.maxDistanceKm || null : null,
+    issuedAt: Date.now()
+  };
+  const encoded = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  const signature = crypto.createHmac("sha256", env.jwtSecret).update(encoded).digest("base64url");
+  return `${encoded}.${signature}`;
+}
+
+function verifyRecommendationContext(token, user) {
+  if (typeof token !== "string" || token.length > 4096) return null;
+
+  const [encoded, suppliedSignature, extra] = token.split(".");
+  if (!encoded || !suppliedSignature || extra !== undefined || !/^[A-Za-z0-9_-]+$/.test(encoded)) return null;
+
+  const expectedSignature = crypto.createHmac("sha256", env.jwtSecret).update(encoded).digest();
+  let actualSignature;
+  try {
+    actualSignature = Buffer.from(suppliedSignature, "base64url");
+  } catch (_error) {
+    return null;
+  }
+  if (
+    actualSignature.length !== expectedSignature.length ||
+    !crypto.timingSafeEqual(actualSignature, expectedSignature)
+  ) return null;
+
+  let payload;
+  try {
+    payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
+  } catch (_error) {
+    return null;
+  }
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+
+  const now = Date.now();
+  const validTarget =
+    (payload.role === USER_ROLES.DONOR && ["ngo", "none"].includes(payload.target)) ||
+    (payload.role === USER_ROLES.NGO && ["donation", "none"].includes(payload.target));
+  const validIds = Array.isArray(payload.ids) &&
+    payload.ids.length <= 5 &&
+    payload.ids.every((id) => typeof id === "string" && /^[a-f\d]{24}$/i.test(id));
+  const validCategory = payload.category === null ||
+    (typeof payload.category === "string" && payload.category.trim().length > 0 && payload.category.length <= 80);
+  const validDistance = payload.maxDistanceKm === null ||
+    (typeof payload.maxDistanceKm === "number" &&
+      Number.isFinite(payload.maxDistanceKm) &&
+      payload.maxDistanceKm >= 0);
+
+  if (
+    payload.userId !== user?.id ||
+    payload.role !== user?.role ||
+    !validTarget ||
+    !validIds ||
+    !validCategory ||
+    !validDistance ||
+    !Number.isFinite(payload.issuedAt) ||
+    payload.issuedAt > now + 60_000 ||
+    now - payload.issuedAt > RECOMMENDATION_CONTEXT_TTL_MS
+  ) return null;
+
+  return payload;
+}
+
+function latestRecommendationContext(history, user) {
+  if (!Array.isArray(history)) return null;
+  for (const item of [...history].reverse()) {
+    if (
+      item?.role === "assistant" &&
+      Object.prototype.hasOwnProperty.call(item, "recommendationContext")
+    ) {
+      return verifyRecommendationContext(item.recommendationContext, user);
+    }
+  }
+  return null;
+}
+
+function recommendationCandidateName(candidate, target) {
+  return target === "ngo"
+    ? candidate.organizationName || candidate.name
+    : candidate.foodName;
+}
+
+function clarificationForCandidates(candidates, target, unavailable = false) {
+  const entity = target === "ngo" ? "NGO" : target === "donation" ? "Donation" : "recommendation";
+  if (!candidates.length) {
+    return unavailable
+      ? `I don't have current, verified ${entity} details from that previous result to explain. Please run the search again.`
+      : `I don't have validated ${entity} details from a previous search to explain. Please run the search again.`;
+  }
+
+  const names = candidates.map((candidate) => recommendationCandidateName(candidate, target));
+  const list = names.length > 1 ? names.join(", ") : names[0];
+  if (unavailable) {
+    return `I can't determine why an unshown ${entity} was excluded from the previous results. Which ${entity} do you mean? The verified previous results were: ${list}.`;
+  }
+  return `Which ${entity.toLowerCase()} do you mean? The verified previous results were: ${list}.`;
+}
+
+function explainValidatedRecommendation(candidate, target, category, displayLocale, displayTimeZone) {
+  const distance = `${candidate.distanceKm} km from your saved location`;
+  if (target === "ngo") {
+    const name = recommendationCandidateName(candidate, target);
+    const accepted = candidate.acceptedCategories || [];
+    const categoryReason = category
+      ? normalizeCategory(category) === "any" || accepted.some((item) => normalizeCategory(item) === "any")
+        ? ` It accepts any food category, including ${category}.`
+        : ` It accepts ${accepted.join(", ")}, including the requested ${category}.`
+      : "";
+    const radiusReason = candidate.operatingRadiusKm == null
+      ? ""
+      : ` The location is within its configured ${candidate.operatingRadiusKm} km operating radius.`;
+    return `${name} was included in your previous results because it is currently accepting donations and is ${distance}.${categoryReason}${radiusReason}`;
+  }
+
+  const categoryReason = category
+    ? ` It matches the requested ${candidate.category} category.`
+    : "";
+  const availableUntil = new Date(candidate.availableUntil).toLocaleString(
+    displayLocale || undefined,
+    displayTimeZone ? { timeZone: displayTimeZone } : undefined
+  );
+  return `${candidate.foodName} was included in your previous results because it is currently ${candidate.status}, has not passed its availability deadline (${availableUntil}), and is ${distance}.${categoryReason}`;
+}
+
+async function recommendationFollowUpResponse(message, history, user, displayLocale, displayTimeZone) {
+  if (user?.role === USER_ROLES.ADMIN) {
+    return {
+      message: "I'm logged in with your admin account, so I can't provide donor or NGO recommendation details.",
+      recommendations: []
+    };
+  }
+
+  const context = latestRecommendationContext(history, user);
+  if (!context || context.target === "none" || !context.ids.length) {
+    return { message: clarificationForCandidates([], null), recommendations: [] };
+  }
+
+  const candidates = await recommendationService.resolveChatRecommendationContext({
+    userId: user.id,
+    role: user.role,
+    target: context.target,
+    ids: context.ids,
+    category: context.category,
+    maxDistanceKm: context.maxDistanceKm
+  });
+  if (!candidates.length) {
+    return {
+      message: clarificationForCandidates([], context.target, true),
+      recommendations: []
+    };
+  }
+
+  const text = message.toLowerCase();
+  const mentionsOther =
+    /^why\s+(?:not|no)\b|\bother\b|\bnot recommended\b|\bnot shown\b|\bexcluded\b|\bwasn't\b|\bwas not\b|\bdidn't\b|\bdid not\b/i.test(message);
+  const named = candidates.filter((candidate) =>
+    text.includes(recommendationCandidateName(candidate, context.target).toLowerCase())
+  );
+  if (mentionsOther && named.length === 1) {
+    return {
+      message: `The verified previous results show ${recommendationCandidateName(named[0], context.target)} was recommended. I can't explain an unshown ${context.target === "ngo" ? "NGO" : "Donation"} from these records. Which other candidate do you mean?`,
+      recommendations: []
+    };
+  }
+  const refersToSingle = /\b(?:this|that)\b/i.test(message) && candidates.length === 1;
+  const selected = named.length === 1
+    ? named[0]
+    : !mentionsOther && (refersToSingle || candidates.length === 1)
+      ? candidates[0]
+      : null;
+
+  if (!selected) {
+    return {
+      message: clarificationForCandidates(candidates, context.target, mentionsOther),
+      recommendations: []
+    };
+  }
+
+  return {
+    message: explainValidatedRecommendation(
+      selected,
+      context.target,
+      context.category,
+      displayLocale,
+      displayTimeZone
+    ),
+    recommendations: []
+  };
+}
+
 /**
  * Generate a conversational response using Groq.
  *
@@ -327,18 +543,42 @@ async function generateChatResponse(message, options = {}) {
 
   const intent = extractIntent(message, options.history);
   const unsupported = capabilityMessage(options.user?.role, intent.target);
-  if (unsupported) return { message: unsupported, recommendations: [] };
+  if (unsupported) {
+    return {
+      message: unsupported,
+      recommendations: [],
+      recommendationContext: signRecommendationContext([], { target: "none" }, options.user)
+    };
+  }
   const knownAnswer = knownFeatureAnswer(message, options.user?.role);
   if (knownAnswer) return { message: knownAnswer, recommendations: [] };
+
+  if (isRecommendationFollowUp(message)) {
+    return recommendationFollowUpResponse(
+      message,
+      options.history,
+      options.user,
+      options.displayLocale,
+      options.displayTimeZone
+    );
+  }
 
   if (intent.kind === "recommendation") {
     try {
       const result = await executeRecommendationIntent(intent, options.user);
       const recommendations = buildUiRecommendations(result);
-      return { message: groundedRecommendationMessage(recommendations), recommendations };
+      return {
+        message: groundedRecommendationMessage(recommendations),
+        recommendations,
+        recommendationContext: signRecommendationContext(result, intent, options.user)
+      };
     } catch (error) {
       const errorMessage = error instanceof AppError ? error.message : "Recommendation data is temporarily unavailable.";
-      return { message: groundedRecommendationMessage([], errorMessage), recommendations: [] };
+      return {
+        message: groundedRecommendationMessage([], errorMessage),
+        recommendations: [],
+        recommendationContext: signRecommendationContext([], intent, options.user)
+      };
     }
   }
 
@@ -436,5 +676,9 @@ module.exports = {
   executeRecommendationIntent,
   sanitizeRecommendationResult,
   buildUiRecommendations,
-  sanitizeHistory
+  sanitizeHistory,
+  signRecommendationContext,
+  verifyRecommendationContext,
+  latestRecommendationContext,
+  recommendationFollowUpResponse
 };

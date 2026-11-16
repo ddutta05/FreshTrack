@@ -109,9 +109,6 @@ async function seed() {
   ]);
 
   console.log("Development seed complete");
-  console.log("Admin: admin@freshtrack.dev / Admin123");
-  console.log("Donor: raj@freshtrack.dev / Donor123");
-  console.log("NGO: raha@freshtrack.dev / Ngo12345");
   process.exit(0);
 }
 

@@ -8,6 +8,7 @@ import { LoadingSpinner, EmptyState, ErrorState } from '@/components/common/Load
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
 import { offerService, requestService } from '@/services/services';
+import { normalizeApiErrorMessage } from '@/services/api';
 import type { DonationOffer, DonationRequest } from '@/types';
 
 const STATUS_FILTERS = [
@@ -31,6 +32,14 @@ export default function MyRequests() {
   const [actionLoading, setActionLoading] = useState(false);
 
   useEffect(() => {
+    const nextTab = searchParams.get('tab') === 'offers' ? 'offers' : 'requests';
+    setTab(nextTab);
+    if (!searchParams.get('tab')) {
+      setSearchParams({ tab: 'requests' }, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
+
+  useEffect(() => {
     if (!user) return;
     Promise.all([
       requestService.getByNGO(user.id),
@@ -49,27 +58,18 @@ export default function MyRequests() {
 
   const selectTab = (nextTab: 'requests' | 'offers') => {
     setTab(nextTab);
-    if (nextTab === 'offers') setSearchParams({ tab: 'offers' });
-    else setSearchParams({});
+    setSearchParams({ tab: nextTab }, { replace: true });
   };
+
+  const getTabReturnTo = (nextTab: 'requests' | 'offers') => `/my-requests?tab=${nextTab}`;
 
   const renderRequestAction = (request: DonationRequest) => {
     if (request.status === 'pending') {
-      return (
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-amber-700">Requested</span>
-          {request.donationId && <Link to={`/food/${request.donationId}`} className="text-xs font-medium text-primary-700 hover:text-primary-800">View Donation</Link>}
-        </div>
-      );
+      return <span className="text-xs font-medium text-amber-700">Requested</span>;
     }
 
     if (request.status === 'accepted') {
-      return (
-        <div className="flex flex-col gap-2 text-left">
-          <span className="text-xs font-medium text-blue-700">Accepted</span>
-          <Link to={`/food/${request.donationId}`} className="text-xs font-medium text-primary-700 hover:text-primary-800">View Donation</Link>
-        </div>
-      );
+      return <span className="text-xs font-medium text-blue-700">Accepted</span>;
     }
 
     if (request.status === 'rejected') {
@@ -89,17 +89,13 @@ export default function MyRequests() {
         <div className="flex gap-2">
           <Button size="sm" variant="success" onClick={() => handleOfferDecision(offer.id, 'accept')} disabled={actionLoading}><Check className="w-4 h-4" /> Accept</Button>
           <Button size="sm" variant="danger" onClick={() => handleOfferDecision(offer.id, 'reject')} disabled={actionLoading}><X className="w-4 h-4" /> Reject</Button>
+          <Link to={`/offers/${offer.id}`} state={{ returnTo: getTabReturnTo('offers') }} className="inline-flex items-center justify-center rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50">View</Link>
         </div>
       );
     }
 
     if (offer.status === 'accepted') {
-      return (
-        <div className="flex flex-col gap-2 text-left">
-          <span className="text-xs font-medium text-blue-700">Accepted</span>
-          <Link to={`/offers/${offer.id}`} className="text-xs font-medium text-primary-700 hover:text-primary-800">View Offer</Link>
-        </div>
-      );
+      return <span className="text-xs font-medium text-blue-700">Accepted</span>;
     }
 
     if (offer.status === 'rejected') {
@@ -122,8 +118,8 @@ export default function MyRequests() {
         setRequests(updated);
       }
       toast('Your completion was confirmed.', 'success');
-    } catch {
-      toast('Failed to complete pickup. Please try again.', 'error');
+    } catch (err) {
+      toast(normalizeApiErrorMessage(err), 'error');
     } finally {
       setActionLoading(false);
     }
@@ -134,9 +130,9 @@ export default function MyRequests() {
     try {
       await (action === 'accept' ? requestService.accept(requestId) : requestService.reject(requestId));
       if (user) setRequests(await requestService.getByNGO(user.id));
-      toast(action === 'accept' ? 'Offer accepted.' : 'Offer rejected.', 'success');
-    } catch {
-      toast('Unable to update this request.', 'error');
+      toast(action === 'accept' ? 'Request accepted.' : 'Request rejected.', 'success');
+    } catch (err) {
+      toast(normalizeApiErrorMessage(err), 'error');
     } finally {
       setActionLoading(false);
     }
@@ -148,8 +144,8 @@ export default function MyRequests() {
       await (action === 'accept' ? offerService.accept(offerId) : offerService.reject(offerId));
       if (user) setOffers(await offerService.getReceived());
       toast(action === 'accept' ? 'Offer accepted.' : 'Offer rejected.', 'success');
-    } catch {
-      toast('Unable to update this offer.', 'error');
+    } catch (err) {
+      toast(normalizeApiErrorMessage(err), 'error');
     } finally {
       setActionLoading(false);
     }
@@ -161,8 +157,8 @@ export default function MyRequests() {
       await offerService.complete(offerId);
       if (user) setOffers(await offerService.getReceived());
       toast('Your completion was confirmed.', 'success');
-    } catch {
-      toast('Failed to complete pickup. Please try again.', 'error');
+    } catch (err) {
+      toast(normalizeApiErrorMessage(err), 'error');
     } finally {
       setActionLoading(false);
     }
@@ -172,7 +168,11 @@ export default function MyRequests() {
     <DashboardLayout>
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">My Requests</h1>
-        <p className="text-gray-500 mt-1">Track all the food donations you've requested.</p>
+        <p className="text-gray-500 mt-1">
+          {tab === 'requests'
+            ? 'Track food donations your organization has requested from donors.'
+            : 'Review direct food offers sent to your organization by donors.'}
+        </p>
       </div>
 
       <div className="flex gap-2 mb-6 overflow-x-auto pb-1">
@@ -205,9 +205,8 @@ export default function MyRequests() {
       ) : tab === 'offers' && filteredOffers.length === 0 ? (
         <EmptyState
           icon={ClipboardList}
-          title="No offers received"
+          title="No Direct Offers received"
           message={filter === 'all' ? "You haven't received any Direct Offers yet." : `No ${filter} Direct Offers at the moment.`}
-          action={<Link to="/available-food" className="btn-primary">Browse Available Food</Link>}
         />
       ) : tab === 'requests' ? (
         <div className="card overflow-hidden">
@@ -228,7 +227,7 @@ export default function MyRequests() {
                 {filteredRequests.map((r) => (
                   <tr key={r.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4">
-                      <Link to={`/food/${r.donationId}`} className="font-medium text-gray-900 hover:text-primary-600">{r.donation?.foodName || 'Unknown'}</Link>
+                      <span className="font-medium text-gray-900">{r.donation?.foodName || 'Unknown'}</span>
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-600">{r.donation?.donorName || 'Unknown'}</td>
                     <td className="px-6 py-4 text-sm text-gray-600 hidden sm:table-cell">{r.donation?.quantity || '-'}</td>
@@ -236,7 +235,7 @@ export default function MyRequests() {
                     <td className="px-6 py-4 text-sm text-gray-600 hidden lg:table-cell">{new Date(r.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</td>
                     <td className="px-6 py-4"><StatusBadge status={r.status} type="request" /></td>
                     <td className="px-6 py-4 text-right">
-                      {renderRequestAction(r)}
+                      {r.donationId ? <Link to={`/food/${r.donationId}`} state={{ returnTo: getTabReturnTo('requests') }} className="inline-flex items-center justify-center rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50">View</Link> : renderRequestAction(r)}
                     </td>
                   </tr>
                 ))}
@@ -262,14 +261,14 @@ export default function MyRequests() {
               <tbody className="divide-y divide-gray-100">
                 {filteredOffers.map((offer) => (
                   <tr key={offer.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4"><Link to={`/offers/${offer.id}`} className="font-medium text-gray-900 hover:text-primary-600">{offer.foodName}</Link></td>
+                    <td className="px-6 py-4"><span className="font-medium text-gray-900">{offer.foodName}</span></td>
                     <td className="px-6 py-4 text-sm text-gray-600">{offer.donorName || 'Unknown'}</td>
                     <td className="px-6 py-4 text-sm text-gray-600 hidden sm:table-cell">{offer.quantity || '-'}</td>
-                    <td className="px-6 py-4 text-sm text-gray-600 hidden md:table-cell">{offer.location || 'Direct Offer'}</td>
+                    <td className="px-6 py-4 text-sm text-gray-600 hidden md:table-cell">{offer.location || 'Not provided'}</td>
                     <td className="px-6 py-4 text-sm text-gray-600 hidden lg:table-cell">{new Date(offer.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</td>
                     <td className="px-6 py-4"><StatusBadge status={offer.status} type="request" /></td>
                     <td className="px-6 py-4 text-right">
-                      {renderOfferAction(offer)}
+                      {offer.status === 'pending' ? renderOfferAction(offer) : <Link to={`/offers/${offer.id}`} state={{ returnTo: getTabReturnTo('offers') }} className="inline-flex items-center justify-center rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50">View</Link>}
                     </td>
                   </tr>
                 ))}

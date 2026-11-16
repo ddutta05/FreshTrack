@@ -17,44 +17,50 @@ function errorHandler(error, _req, res, _next) {
   if (error instanceof mongoose.Error.CastError) {
     statusCode = 400;
     code = "INVALID_ID";
-    message = "Invalid resource id";
+    message = "We couldn't find that item.";
   }
 
   if (error.code === 11000) {
     statusCode = 409;
     code = "DUPLICATE_RESOURCE";
-    message = "Resource already exists";
+    message = "This item already exists.";
   }
 
   if (error instanceof multer.MulterError) {
     if (error.code === "LIMIT_FILE_SIZE") {
       statusCode = 413;
       code = "FILE_TOO_LARGE";
-      message = "Uploaded file is too large";
+      message = "Your file is too large. Please choose a smaller image.";
     } else {
       statusCode = 400;
       code = "UPLOAD_ERROR";
-      message = "Invalid upload payload";
+      message = "Please upload a valid file.";
     }
   }
 
   if (error.message === "Unsupported file type") {
     statusCode = 422;
     code = "INVALID_FILE_TYPE";
-    message = "Unsupported file type";
+    message = "Please upload a valid image file.";
   }
 
   if (error.details) {
     details = error.details;
   }
 
-  if (process.env.NODE_ENV !== "test" && statusCode >= 500) {
+  const isProduction = process.env.NODE_ENV === "production";
+
+  if (!isProduction && statusCode >= 500) {
     console.error("Unhandled error:", error);
   }
 
+  const responseMessage = isProduction && statusCode >= 500
+    ? "Something went wrong on the server. Please try again."
+    : message;
+
   return res.status(statusCode).json({
     success: false,
-    message,
+    message: responseMessage,
     error: {
       code,
       ...(details ? { details } : {})

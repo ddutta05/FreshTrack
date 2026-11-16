@@ -6,6 +6,7 @@ import Input from '@/components/common/Input';
 import { LoadingSpinner, EmptyState, ErrorState } from '@/components/common/LoadingSpinner';
 import { useToast } from '@/context/ToastContext';
 import { recommendationService } from '@/services/services';
+import { normalizeApiErrorMessage } from '@/services/api';
 import { FOOD_CATEGORIES, type NgoBrowseResult } from '@/types';
 
 export default function NgoSearch() {
@@ -15,15 +16,32 @@ export default function NgoSearch() {
   const [radius, setRadius] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const parsedRadius = Number(radius);
+  const invalidRadius = radius !== '' && (
+    !Number.isFinite(parsedRadius) || parsedRadius < 0.1 || parsedRadius > 50
+  );
 
   useEffect(() => {
+    let cancelled = false;
+    if (invalidRadius) {
+      setLoading(false);
+      setError(false);
+      return () => { cancelled = true; };
+    }
+
     setLoading(true);
     setError(false);
-    recommendationService.browseNgos({ category: category || undefined, maxDistanceKm: radius ? Number(radius) : undefined })
-      .then(setNgos)
-      .catch(() => { setError(true); toast('Unable to load NGOs right now.', 'error'); })
-      .finally(() => setLoading(false));
-  }, [category, radius, toast]);
+    recommendationService.browseNgos({ category: category || undefined, maxDistanceKm: radius ? parsedRadius : undefined })
+      .then((data) => { if (!cancelled) setNgos(data); })
+      .catch((err) => {
+        if (!cancelled) {
+          setError(true);
+          toast(normalizeApiErrorMessage(err), 'error');
+        }
+      })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [category, invalidRadius, parsedRadius, radius, toast]);
 
   return (
     <DashboardLayout>
@@ -38,7 +56,16 @@ export default function NgoSearch() {
             {FOOD_CATEGORIES.map((item) => <option key={item} value={item}>{item}</option>)}
           </select>
         </label>
-        <Input label="Distance (km, optional)" type="number" min="0.1" max="50" placeholder="Any distance" value={radius} onChange={(event) => setRadius(event.target.value)} />
+        <Input
+          label="Distance (km, optional)"
+          type="number"
+          min="0.1"
+          max="50"
+          placeholder="Any distance"
+          value={radius}
+          error={invalidRadius ? 'Enter a distance between 0.1 and 50 km.' : undefined}
+          onChange={(event) => setRadius(event.target.value)}
+        />
         <div className="flex items-center gap-2 text-xs text-gray-500 sm:col-span-2"><Filter className="h-4 w-4" />Nearest first when location is saved.</div>
       </div>
       {loading ? <LoadingSpinner label="Loading NGOs..." /> : error ? <ErrorState message="Unable to load NGOs." onRetry={() => window.location.reload()} /> : ngos.length === 0 ? <EmptyState icon={Users} title="No NGOs found" message="Try another category or distance." /> : (

@@ -1,7 +1,8 @@
+const mongoose = require("mongoose");
 const Donation = require("../models/Donation");
 const DonationRequest = require("../models/DonationRequest");
 const { DONATION_STATUS, REQUEST_STATUS, NOTIFICATION_TYPES } = require("../utils/constants");
-const { createNotification } = require("./notification.service");
+const { createNotification, emitSessionNotifications } = require("./notification.service");
 const { normalizeStoredImagePath } = require("../utils/imagePath");
 
 function toDonationClient(donation) {
@@ -33,47 +34,67 @@ function toDonationClient(donation) {
 async function expireDonationsAndNotify(session) {
   const now = new Date();
   const expirableStatuses = [DONATION_STATUS.AVAILABLE, DONATION_STATUS.PENDING, DONATION_STATUS.ACCEPTED];
-
-  let expiringQuery = Donation.find({
+  const filter = {
     status: { $in: expirableStatuses },
     availableUntil: { $lt: now }
-  });
+  };
 
   if (session) {
-    expiringQuery = expiringQuery.session(session);
+    const expiring = await Donation.find(filter).session(session);
+    for (const donation of expiring) {
+      await expireDonation(donation, session);
+    }
+    return expiring.length;
   }
 
-  const expiring = await expiringQuery;
+  const candidates = await Donation.find(filter).select("_id").lean();
+  let expiredCount = 0;
 
-  if (!expiring.length) {
-    return 0;
+  for (const candidate of candidates) {
+    const expirySession = await mongoose.startSession();
+    expirySession.startTransaction();
+    try {
+      const donation = await Donation.findOne({ ...filter, _id: candidate._id }).session(expirySession);
+      if (donation) {
+        await expireDonation(donation, expirySession);
+      }
+
+      await expirySession.commitTransaction();
+      emitSessionNotifications(expirySession);
+      if (donation) expiredCount += 1;
+    } catch (error) {
+      await expirySession.abortTransaction();
+      throw error;
+    } finally {
+      expirySession.endSession();
+    }
   }
 
-  for (const donation of expiring) {
-    donation.status = DONATION_STATUS.EXPIRED;
-    await donation.save({ session });
+  return expiredCount;
+}
 
-    await DonationRequest.updateMany(
-      {
-        donationId: donation._id,
-        status: { $in: [REQUEST_STATUS.PENDING, REQUEST_STATUS.ACCEPTED] }
-      },
-      { $set: { status: REQUEST_STATUS.REJECTED } },
-      { session }
-    );
+async function expireDonation(donation, session) {
+  donation.status = DONATION_STATUS.EXPIRED;
+  await donation.save({ session });
 
-    await createNotification(
-      {
-        userId: donation.donorId,
-        type: NOTIFICATION_TYPES.DONATION_EXPIRED,
-        message: `Your donation \"${donation.foodName}\" has expired.`,
-        donationId: donation._id
-      },
-      session
-    );
-  }
+  await DonationRequest.updateMany(
+    {
+      donationId: donation._id,
+      status: { $in: [REQUEST_STATUS.PENDING, REQUEST_STATUS.ACCEPTED] }
+    },
+    { $set: { status: REQUEST_STATUS.REJECTED } },
+    { session }
+  );
 
-  return expiring.length;
+  await createNotification(
+    {
+      userId: donation.donorId,
+      type: NOTIFICATION_TYPES.DONATION_EXPIRED,
+      message: `Your donation \"${donation.foodName}\" has expired.`,
+      donationId: donation._id
+    },
+    session
+  );
 }
 
 module.exports = {

@@ -5,6 +5,7 @@ interface DashboardCardProps {
   label: string;
   value: string | number;
   color?: 'primary' | 'blue' | 'amber' | 'gray' | 'red';
+  detail?: string;
 }
 
 const colorClasses: Record<string, string> = {
@@ -15,7 +16,7 @@ const colorClasses: Record<string, string> = {
   red: 'bg-red-50 text-red-600',
 };
 
-export default function DashboardCard({ icon, label, value, color = 'primary' }: DashboardCardProps) {
+export default function DashboardCard({ icon, label, value, color = 'primary', detail }: DashboardCardProps) {
   return (
     <div className="card p-5 flex items-center gap-4">
       <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${colorClasses[color]}`}>
@@ -24,6 +25,7 @@ export default function DashboardCard({ icon, label, value, color = 'primary' }:
       <div>
         <p className="text-2xl font-bold text-gray-900">{value}</p>
         <p className="text-sm text-gray-500">{label}</p>
+        {detail && <p className="text-xs text-gray-500">{detail}</p>}
       </div>
     </div>
   );

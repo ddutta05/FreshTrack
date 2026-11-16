@@ -114,6 +114,9 @@ const updateUser = asyncHandler(async (req, res) => {
   if (!isAdmin && !isSelf) {
     throw new AppError("Forbidden", 403, "FORBIDDEN");
   }
+  if (isAdmin && isSelf && req.body.status === USER_STATUS.DISABLED) {
+    throw new AppError("Admin user cannot be disabled from this endpoint", 400, "ADMIN_DISABLE_FORBIDDEN");
+  }
 
   if (req.body.name !== undefined) user.name = req.body.name;
   if (req.body.phone !== undefined) user.phone = req.body.phone;

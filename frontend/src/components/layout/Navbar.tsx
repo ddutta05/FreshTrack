@@ -1,4 +1,4 @@
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, NavLink } from 'react-router-dom';
 import { Leaf, Home, Info, LogIn, UserPlus, LogOut, LayoutDashboard, Package, Users, ShoppingBag, ClipboardList, Menu, X } from 'lucide-react';
 import { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
@@ -26,15 +26,16 @@ const roleNavItems = {
 
 export default function Navbar() {
   const { user, logout } = useAuth();
-  const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const handleLogout = () => {
     logout();
-    navigate('/');
+    window.location.replace('/');
   };
 
   const navItems = user ? roleNavItems[user.role] : [];
+
+  const navLinkClass = ({ isActive }: { isActive: boolean }) => `flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${isActive ? 'bg-primary-50 text-primary-700 shadow-sm ring-1 ring-primary-100' : 'text-gray-600 hover:text-primary-700 hover:bg-primary-50'}`;
 
   return (
     <header className="sticky top-0 z-40 bg-white border-b border-gray-200">
@@ -68,27 +69,37 @@ export default function Navbar() {
             ) : (
               <>
                 {navItems.map((item) => (
-                  <Link key={item.to} to={item.to} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-gray-600 hover:text-primary-700 hover:bg-primary-50 transition-colors">
+                  <NavLink key={item.to} to={item.to} className={navLinkClass}>
                     <item.icon className="w-4 h-4" /> {item.label}
-                  </Link>
+                  </NavLink>
                 ))}
-                {user && user.role !== 'admin' && <NotificationDropdown />}
-                <button onClick={handleLogout} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-gray-600 hover:text-red-600 hover:bg-red-50 transition-colors ml-1">
-                  <LogOut className="w-4 h-4" /> Logout
-                </button>
               </>
             )}
           </div>
 
+          {user && user.role !== 'admin' && <NotificationDropdown />}
+          {user && (
+            <button onClick={handleLogout} className="hidden md:flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-gray-600 hover:text-red-600 hover:bg-red-50 transition-colors ml-1">
+              <LogOut className="w-4 h-4" /> Logout
+            </button>
+          )}
+
           {/* Mobile toggle */}
-          <button className="md:hidden p-2 rounded-lg text-gray-600 hover:bg-gray-100" onClick={() => setMobileOpen(!mobileOpen)}>
+          <button
+            type="button"
+            className="md:hidden p-2 rounded-lg text-gray-600 hover:bg-gray-100"
+            aria-label={mobileOpen ? 'Close navigation menu' : 'Open navigation menu'}
+            aria-expanded={mobileOpen}
+            aria-controls="mobile-navigation"
+            onClick={() => setMobileOpen(!mobileOpen)}
+          >
             {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
         </div>
 
         {/* Mobile menu */}
         {mobileOpen && (
-          <div className="md:hidden py-3 border-t border-gray-100 animate-slide-down">
+          <div id="mobile-navigation" className="md:hidden py-3 border-t border-gray-100 animate-slide-down">
             {!user ? (
               <div className="flex flex-col gap-1">
                 <Link to="/" onClick={() => setMobileOpen(false)} className="flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-600 hover:bg-primary-50">
@@ -107,9 +118,9 @@ export default function Navbar() {
             ) : (
               <div className="flex flex-col gap-1">
                 {navItems.map((item) => (
-                  <Link key={item.to} to={item.to} onClick={() => setMobileOpen(false)} className="flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-600 hover:bg-primary-50">
+                  <NavLink key={item.to} to={item.to} onClick={() => setMobileOpen(false)} className={({ isActive }) => `flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${isActive ? 'bg-primary-50 text-primary-700 ring-1 ring-primary-100' : 'text-gray-600 hover:bg-primary-50'}`}>
                     <item.icon className="w-4 h-4" /> {item.label}
-                  </Link>
+                  </NavLink>
                 ))}
                 <button onClick={() => { handleLogout(); setMobileOpen(false); }} className="flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium text-red-600 hover:bg-red-50 text-left">
                   <LogOut className="w-4 h-4" /> Logout

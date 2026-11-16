@@ -103,7 +103,8 @@ Error:
 - Endpoint: POST /donations (multipart/form-data)
 - Field: image
 - Supported mimes: jpeg, png, webp, gif
-- Files are stored in /uploads and served from /uploads/<file>
+- Images are processed in memory and stored as a data URL in MongoDB
+- Legacy stored values such as /uploads/<file> are normalized when reading older records for compatibility
 
 ## Socket.IO
 - Connect with JWT in auth token:

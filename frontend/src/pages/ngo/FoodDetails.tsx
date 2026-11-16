@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate, Link, useLocation } from 'react-router-dom';
 import { ArrowLeft, MapPin, Clock, Calendar, Package, Tag, FileText, User, ShoppingBag, Send, CheckCircle2 } from 'lucide-react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import StatusBadge from '@/components/common/StatusBadge';
@@ -10,6 +10,7 @@ import { LoadingSpinner, ErrorState } from '@/components/common/LoadingSpinner';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
 import { donationService, requestService } from '@/services/services';
+import { normalizeApiErrorMessage } from '@/services/api';
 import type { Donation, DonationRequest } from '@/types';
 import { getDonationImageUrl } from '@/utils/image';
 import { getCompletionDetails, getCompletionMessage } from '@/utils/workflow';
@@ -19,6 +20,7 @@ export default function FoodDetails() {
   const { user } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [donation, setDonation] = useState<Donation | null>(null);
   const [ngoRequests, setNgoRequests] = useState<DonationRequest[]>([]);
@@ -66,9 +68,9 @@ export default function FoodDetails() {
       const refreshed = await requestService.getByNGO(user.id);
       setNgoRequests(refreshed);
       setMyRequest(refreshed.find((request) => request.donationId === donation.id && request.ngoId === user.id) || null);
-      navigate('/my-requests');
-    } catch {
-      toast('Failed to send request. Please try again.', 'error');
+      navigate((location.state as { returnTo?: string } | null)?.returnTo || '/my-requests?tab=requests');
+    } catch (err) {
+      toast(normalizeApiErrorMessage(err), 'error');
     } finally {
       setSubmitting(false);
     }
@@ -81,10 +83,17 @@ export default function FoodDetails() {
       await requestService.complete(myRequest.id);
       const refreshed = await requestService.getByNGO(user.id);
       setNgoRequests(refreshed);
-      setMyRequest(refreshed.find((request) => request.id === myRequest.id) || null);
-      toast('Completed', 'success');
-    } catch {
-      toast('Failed to complete request. Please try again.', 'error');
+      const updatedRequest = refreshed.find((request) => request.id === myRequest.id) || null;
+      setMyRequest(updatedRequest);
+      if (updatedRequest?.status === 'completed') {
+        toast('Completed', 'success');
+      } else if (updatedRequest?.status === 'accepted') {
+        toast('Your completion was recorded. Waiting for the donor to confirm completion.', 'info');
+      } else {
+        toast('Your completion confirmation was recorded. Refresh to check the latest request status.', 'info');
+      }
+    } catch (err) {
+      toast(normalizeApiErrorMessage(err), 'error');
     } finally {
       setSubmitting(false);
     }
@@ -106,14 +115,17 @@ export default function FoodDetails() {
     );
   }
 
-  const isAvailable = donation.status === 'available' || donation.status === 'pending';
+  const isRequestable =
+    ['available', 'pending'].includes(donation.status) &&
+    new Date(donation.availableUntil).getTime() > Date.now();
+  const returnTo = (location.state as { returnTo?: string } | null)?.returnTo || '/available-food';
   const imageUrl = getDonationImageUrl(donation.image);
   const currentRequest = user?.role === 'ngo'
     ? ngoRequests.find((request) => request.donationId === donation.id && request.ngoId === user.id) ?? null
     : null;
   const requestStatus = currentRequest?.status;
   const hasPendingRequest = requestStatus === 'pending';
-  const hasAcceptedRequest = requestStatus === 'accepted';
+  const hasAcceptedRequest = ['accepted', 'completed'].includes(requestStatus ?? '');
   const hasRejectedRequest = requestStatus === 'rejected';
   const completionDetails = currentRequest && user?.role === 'ngo'
     ? getCompletionDetails({
@@ -129,9 +141,9 @@ export default function FoodDetails() {
 
   return (
     <DashboardLayout>
-      <Link to="/available-food" className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 mb-4">
-        <ArrowLeft className="w-4 h-4" /> Back to Available Food
-      </Link>
+      <button type="button" onClick={() => navigate(returnTo)} className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 mb-4">
+        <ArrowLeft className="w-4 h-4" /> Back
+      </button>
 
       <div className="grid lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
@@ -208,7 +220,7 @@ export default function FoodDetails() {
                     {submitting ? 'Processing...' : 'Mark as Completed'}
                   </Button>
                 )}
-                <Link to="/my-requests" className="btn-secondary w-full mt-2">View My Requests</Link>
+                <Link to="/my-requests?tab=requests" state={{ returnTo: '/my-requests?tab=requests' }} className="btn-secondary w-full mt-2">View My Requests</Link>
               </div>
             ) : hasPendingRequest ? (
               <div className="text-center py-6">
@@ -218,15 +230,19 @@ export default function FoodDetails() {
                 <p className="font-medium text-gray-900 mb-1">Pending</p>
                 <p className="text-sm text-gray-500">Request Sent</p>
                 <p className="text-sm text-gray-500 mt-2">You&apos;ve already requested this donation.</p>
-                <Link to="/my-requests" className="btn-secondary w-full mt-4">View My Requests</Link>
+                <Link to="/my-requests?tab=requests" state={{ returnTo: '/my-requests?tab=requests' }} className="btn-secondary w-full mt-4">View My Requests</Link>
               </div>
-            ) : hasRejectedRequest ? (
+            ) : hasRejectedRequest && !isRequestable ? (
               <div className="text-center py-6">
                 <p className="font-medium text-gray-900 mb-2">Rejected</p>
-                <Link to="/my-requests" className="btn-secondary w-full mt-4">View My Requests</Link>
+                <p className="text-sm text-gray-500">This donation is no longer available for new requests.</p>
+                <Link to="/my-requests?tab=requests" state={{ returnTo: '/my-requests?tab=requests' }} className="btn-secondary w-full mt-4">View My Requests</Link>
               </div>
-            ) : isAvailable ? (
+            ) : isRequestable ? (
               <>
+                {hasRejectedRequest && (
+                  <p className="mb-4 text-sm text-gray-500">Your previous request was rejected. You may submit another request while this donation is available.</p>
+                )}
                 <h3 className="font-semibold text-gray-900 mb-4">Request This Donation</h3>
                 <p className="text-sm text-gray-600 mb-4">
                   Click below to request this donation. You can add a message to the donor.

@@ -28,7 +28,7 @@ const listOffers = asyncHandler(async (req, res) => {
       .limit(limit)
   ]);
 
-  const mapped = items.map(toOfferClient);
+  const mapped = items.map((offer) => toOfferClient(offer, req.user));
 
   if (req.query.page || req.query.limit) {
     return paginated(res, 200, "Offers fetched", mapped, toPagination(page, limit, total));
@@ -55,7 +55,7 @@ const getMyOffers = asyncHandler(async (req, res) => {
       .limit(limit)
   ]);
 
-  const mapped = items.map(toOfferClient);
+  const mapped = items.map((offer) => toOfferClient(offer, req.user));
   if (req.query.page || req.query.limit) {
     return paginated(res, 200, "My offers fetched", mapped, toPagination(page, limit, total));
   }
@@ -81,7 +81,7 @@ const getReceivedOffers = asyncHandler(async (req, res) => {
       .limit(limit)
   ]);
 
-  const mapped = items.map(toOfferClient);
+  const mapped = items.map((offer) => toOfferClient(offer, req.user));
   if (req.query.page || req.query.limit) {
     return paginated(res, 200, "Received offers fetched", mapped, toPagination(page, limit, total));
   }
@@ -103,7 +103,7 @@ const getOfferById = asyncHandler(async (req, res) => {
     throw new AppError("Forbidden", 403, "FORBIDDEN");
   }
 
-  return success(res, 200, "Offer fetched", toOfferClient(offer));
+  return success(res, 200, "Offer fetched", toOfferClient(offer, req.user));
 });
 
 const createDonationOffer = asyncHandler(async (req, res) => {
@@ -113,6 +113,13 @@ const createDonationOffer = asyncHandler(async (req, res) => {
 
   if (!req.body.ngoId || !req.body.foodName || !req.body.category || !req.body.quantity) {
     throw new AppError("NGO, food name, category, and quantity are required", 422, "VALIDATION_ERROR");
+  }
+
+  if (req.body.availableUntil !== undefined && req.body.availableUntil !== null && req.body.availableUntil !== "") {
+    const availableUntil = new Date(req.body.availableUntil);
+    if (Number.isNaN(availableUntil.getTime()) || availableUntil <= new Date()) {
+      throw new AppError("availableUntil must be a future date", 422, "INVALID_AVAILABLE_UNTIL");
+    }
   }
 
   const created = await createOffer({
@@ -135,7 +142,7 @@ const createDonationOffer = asyncHandler(async (req, res) => {
     .populate("donorId", "name phone email")
     .populate("ngoId", "name organizationName location acceptedCategories currentNeedDescription isAcceptingDonations operatingRadiusKm phone email");
 
-  return success(res, 201, "Donation offer created successfully", toOfferClient(hydrated));
+  return success(res, 201, "Donation offer created successfully", toOfferClient(hydrated, req.user));
 });
 
 const acceptOffer = asyncHandler(async (req, res) => {
@@ -145,7 +152,7 @@ const acceptOffer = asyncHandler(async (req, res) => {
     actorId: req.user.id,
     actorRole: req.user.role
   });
-  return success(res, 200, "Offer accepted", toOfferClient(updated));
+  return success(res, 200, "Offer accepted", toOfferClient(updated, req.user));
 });
 
 const rejectOffer = asyncHandler(async (req, res) => {
@@ -155,7 +162,7 @@ const rejectOffer = asyncHandler(async (req, res) => {
     actorId: req.user.id,
     actorRole: req.user.role
   });
-  return success(res, 200, "Offer rejected", toOfferClient(updated));
+  return success(res, 200, "Offer rejected", toOfferClient(updated, req.user));
 });
 
 const completeOffer = asyncHandler(async (req, res) => {
@@ -165,7 +172,7 @@ const completeOffer = asyncHandler(async (req, res) => {
     actorId: req.user.id,
     actorRole: req.user.role
   });
-  return success(res, 200, "Offer completed", toOfferClient(updated));
+  return success(res, 200, "Offer completed", toOfferClient(updated, req.user));
 });
 
 module.exports = {

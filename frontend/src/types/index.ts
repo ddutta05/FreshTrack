@@ -7,12 +7,15 @@ export interface ChatMessage {
 
 export interface ChatRequest {
   message: string;
-  history?: ChatMessage[];
+  history?: Array<ChatMessage & { recommendationContext?: string }>;
+  displayLocale?: string;
+  displayTimeZone?: string;
 }
 
 export interface ChatResponse {
   message: string;
   recommendations: ChatRecommendation[];
+  recommendationContext?: string;
 }
 
 export interface NgoChatRecommendation {
@@ -209,7 +212,7 @@ export const FOOD_CATEGORIES = [
 
 export const DONATION_STATUSES: Record<DonationStatus, { label: string; color: string }> = {
   available: { label: 'Available', color: 'green' },
-  pending: { label: 'Request Pending', color: 'amber' },
+  pending: { label: 'Pending', color: 'amber' },
   accepted: { label: 'Accepted', color: 'blue' },
   completed: { label: 'Completed', color: 'gray' },
   expired: { label: 'Expired', color: 'red' },

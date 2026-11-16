@@ -18,7 +18,7 @@ export function connectSocket(token: string): Socket {
 
   socket = io(SOCKET_BASE_URL, {
     auth: { token },
-    transports: ['websocket', 'polling'],
+    transports: ['polling', 'websocket'],
   });
   connectedToken = token;
 

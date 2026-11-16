@@ -31,6 +31,7 @@ export default function FreshTrackAssistant() {
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [recommendations, setRecommendations] = useState<Record<number, ChatRecommendation[]>>({});
+  const [recommendationContexts, setRecommendationContexts] = useState<Record<number, string>>({});
   const [loading, setLoading] = useState(false);
   const endOfMessagesRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -74,16 +75,34 @@ export default function FreshTrackAssistant() {
     if (!content || loading) return;
 
     const nextUserMessage: ChatMessage = { role: 'user', content };
-    const history = messages.slice(-10);
+    const historyStart = Math.max(0, messages.length - 10);
+    const history = messages.slice(-10).map((item, index) => {
+      const recommendationContext = recommendationContexts[historyStart + index];
+      return item.role === 'assistant' && recommendationContext
+        ? { ...item, recommendationContext }
+        : item;
+    });
     setMessages((current) => [...current, nextUserMessage]);
     setInput('');
     setLoading(true);
 
     try {
-      const response = await aiService.chat({ message: content, history });
+      const response = await aiService.chat({
+        message: content,
+        history,
+        displayLocale: navigator.language,
+        displayTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      });
+      const responseContext = response.recommendationContext;
       setMessages((current) => {
         const assistantIndex = current.length;
         setRecommendations((existing) => ({ ...existing, [assistantIndex]: response.recommendations || [] }));
+        if (responseContext) {
+          setRecommendationContexts((existing) => ({
+            ...existing,
+            [assistantIndex]: responseContext,
+          }));
+        }
         return [...current, { role: 'assistant', content: response.message }];
       });
     } catch {

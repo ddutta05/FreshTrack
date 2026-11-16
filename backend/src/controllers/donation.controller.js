@@ -1,5 +1,7 @@
+const mongoose = require("mongoose");
 const Donation = require("../models/Donation");
 const DonationRequest = require("../models/DonationRequest");
+const Notification = require("../models/Notification");
 const User = require("../models/User");
 const asyncHandler = require("../utils/asyncHandler");
 const { success, paginated } = require("../utils/apiResponse");
@@ -207,7 +209,7 @@ const createDonation = asyncHandler(async (req, res) => {
       .populate("donorId", "name phone email")
       .populate("ngoId", "name organizationName location acceptedCategories currentNeedDescription isAcceptingDonations operatingRadiusKm phone email");
 
-    return success(res, 201, "Donation offer created successfully", toOfferClient(hydrated));
+    return success(res, 201, "Donation offer created successfully", toOfferClient(hydrated, req.user));
   }
 
   const donation = await Donation.create(donationData);
@@ -228,8 +230,20 @@ const updateDonation = asyncHandler(async (req, res) => {
     throw new AppError("Forbidden", 403, "FORBIDDEN");
   }
 
+  if (donation.status === DONATION_STATUS.EXPIRED) {
+    throw new AppError("Expired donations cannot be edited. Create a new donation instead.", 409, "DONATION_LOCKED");
+  }
+
   if (donation.status === DONATION_STATUS.COMPLETED) {
     throw new AppError("Completed donations cannot be edited", 409, "DONATION_LOCKED");
+  }
+
+  const hasProtectedRequest = await DonationRequest.exists({
+    donationId: donation._id,
+    status: { $in: [REQUEST_STATUS.ACCEPTED, REQUEST_STATUS.COMPLETED] }
+  });
+  if (donation.status === DONATION_STATUS.ACCEPTED || hasProtectedRequest) {
+    throw new AppError("Donations with accepted requests cannot be edited.", 409, "DONATION_LOCKED");
   }
 
   if (req.body.availableUntil) {
@@ -273,22 +287,47 @@ const updateDonation = asyncHandler(async (req, res) => {
 });
 
 const deleteDonation = asyncHandler(async (req, res) => {
-  const donation = await Donation.findById(req.params.id);
-  if (!donation) {
-    throw new AppError("Donation not found", 404, "DONATION_NOT_FOUND");
+  await Promise.all([Donation.init(), DonationRequest.init(), Notification.init()]);
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    const donation = await Donation.findById(req.params.id).session(session);
+    if (!donation) {
+      throw new AppError("Donation not found", 404, "DONATION_NOT_FOUND");
+    }
+
+    if (req.user.role !== USER_ROLES.ADMIN && donation.donorId.toString() !== req.user.id) {
+      throw new AppError("Forbidden", 403, "FORBIDDEN");
+    }
+
+    const relatedRequests = await DonationRequest.find({ donationId: donation._id })
+      .select("_id status")
+      .session(session);
+    const hasProtectedRequest = relatedRequests.some((request) =>
+      [REQUEST_STATUS.ACCEPTED, REQUEST_STATUS.COMPLETED].includes(request.status)
+    );
+    if (hasProtectedRequest) {
+      throw new AppError("Donations with accepted or completed requests cannot be deleted.", 409, "DONATION_HAS_PROTECTED_REQUEST");
+    }
+
+    const requestIds = relatedRequests.map((request) => request._id);
+    await Notification.updateMany(
+      { $or: [{ donationId: donation._id }, { requestId: { $in: requestIds } }] },
+      { $unset: { donationId: "", requestId: "" } },
+      { session }
+    );
+    await DonationRequest.deleteMany({ donationId: donation._id }, { session });
+    await Donation.deleteOne({ _id: donation._id }, { session });
+
+    await session.commitTransaction();
+    return success(res, 200, "Donation deleted successfully", null);
+  } catch (error) {
+    await session.abortTransaction();
+    throw error;
+  } finally {
+    session.endSession();
   }
-
-  if (req.user.role !== USER_ROLES.ADMIN && donation.donorId.toString() !== req.user.id) {
-    throw new AppError("Forbidden", 403, "FORBIDDEN");
-  }
-
-  await DonationRequest.deleteMany({
-    donationId: donation._id,
-    status: REQUEST_STATUS.PENDING
-  });
-
-  await donation.deleteOne();
-  return success(res, 200, "Donation deleted successfully", null);
 });
 
 const getImpactStats = asyncHandler(async (_req, res) => {

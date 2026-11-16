@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft, MapPin, Clock, Calendar, Package, Tag, FileText, User, Check, CheckCircle2, X } from 'lucide-react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import StatusBadge from '@/components/common/StatusBadge';
@@ -8,6 +8,7 @@ import { LoadingSpinner, ErrorState } from '@/components/common/LoadingSpinner';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
 import { offerService } from '@/services/services';
+import { normalizeApiErrorMessage } from '@/services/api';
 import type { DonationOffer } from '@/types';
 import { getDonationImageUrl } from '@/utils/image';
 import { getCompletionDetails, getCompletionMessage } from '@/utils/workflow';
@@ -17,6 +18,7 @@ export default function OfferDetailsPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [offer, setOffer] = useState<DonationOffer | null>(null);
   const [loading, setLoading] = useState(true);
@@ -41,8 +43,8 @@ export default function OfferDetailsPage() {
       const refreshed = await offerService.getById(id);
       setOffer(refreshed);
       toast(action === 'accept' ? 'Offer accepted.' : 'Offer rejected.', 'success');
-    } catch {
-      toast('Unable to update this offer.', 'error');
+    } catch (err) {
+      toast(normalizeApiErrorMessage(err), 'error');
     } finally {
       setActionLoading(false);
     }
@@ -56,8 +58,8 @@ export default function OfferDetailsPage() {
       const refreshed = await offerService.getById(id);
       setOffer(refreshed);
       toast(refreshed.status === 'completed' ? 'Completed' : 'Your completion confirmed. Waiting for the other party.', 'success');
-    } catch {
-      toast('Unable to complete this offer.', 'error');
+    } catch (err) {
+      toast(normalizeApiErrorMessage(err), 'error');
     } finally {
       setActionLoading(false);
     }
@@ -72,6 +74,7 @@ export default function OfferDetailsPage() {
   }
 
   const imageUrl = getDonationImageUrl(offer.image);
+  const returnTo = (location.state as { returnTo?: string } | null)?.returnTo || (user?.role === 'ngo' ? '/my-requests?tab=offers' : '/my-donations?tab=offers');
   const isNGO = user?.role === 'ngo';
   const isDonor = user?.role === 'donor';
   const isViewerDonor = Boolean(user && offer.donorId === user.id);
@@ -87,12 +90,13 @@ export default function OfferDetailsPage() {
   });
   const completionState = completionDetails.state;
   const completionMessage = getCompletionMessage({ completionState, viewerRole });
-  const isAccepted = offer.status === 'accepted';
-  const showContactBlock = isAccepted && Boolean(offer.contact);
+  const isLifecycleStatus = ['accepted', 'completed'].includes(offer.status);
+  const isParticipant = isViewerDonor || isViewerNgo;
+  const showContactBlock = isParticipant && isLifecycleStatus && Boolean(offer.contact);
 
   return (
     <DashboardLayout>
-      <button type="button" onClick={() => navigate(-1)} className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 mb-4">
+      <button type="button" onClick={() => navigate(returnTo)} className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 mb-4">
         <ArrowLeft className="w-4 h-4" /> Back
       </button>
 
@@ -140,7 +144,7 @@ export default function OfferDetailsPage() {
             </div>
           )}
 
-          {offer.status === 'pending' && user?.role === 'ngo' && (
+          {offer.status === 'pending' && isViewerNgo && (
             <div className="card p-5">
               <h3 className="font-semibold text-gray-900 mb-3">Direct Offer Status</h3>
               <div className="flex gap-2">
@@ -175,10 +179,10 @@ export default function OfferDetailsPage() {
             </div>
           )}
 
-          {isAccepted && (
+          {isLifecycleStatus && isParticipant && (
             <div className="card p-5">
-              <h3 className="font-semibold text-gray-900 mb-3">Accepted</h3>
-              {completionState === 'both' ? (
+              <h3 className="font-semibold text-gray-900 mb-3">{offer.status === 'completed' ? 'Completed' : 'Accepted'}</h3>
+              {offer.status === 'completed' ? (
                 <p className="text-sm text-gray-600">Completed</p>
               ) : (
                 <>

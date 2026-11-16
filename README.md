@@ -1,223 +1,211 @@
-# FreshTrack — Food Donation Platform
+# FreshTrack
 
-**Good Food Should Never Go to Waste**
+FreshTrack is a food donation platform that connects donors with NGOs and helps redistribute surplus food before it goes to waste.
 
-FreshTrack is a modern web application that connects surplus food from restaurants, events, and individuals with nearby NGOs and charitable organizations that can collect and distribute it to people in need.
+## Features
 
-![React](https://img.shields.io/badge/React-18.3-blue)
-![TypeScript](https://img.shields.io/badge/TypeScript-5.5-blue)
-![Vite](https://img.shields.io/badge/Vite-5.4-purple)
-![TailwindCSS](https://img.shields.io/badge/TailwindCSS-3.4-teal)
+- Donor accounts for posting surplus food listings
+- NGO accounts for discovering and requesting food
+- Donation workflow with create, request, accept, reject, and completion states
+- Direct DonationOffer workflow for matched donor/NGO offers
+- Contact and handoff coordination after acceptance
+- Location-aware discovery and profile data
+- Real-time notifications through Socket.IO
+- AI assistant for food donation guidance and recommendations
+- Image uploads with validation, resizing, and compression
+- Admin management for users and platform activity
 
----
+## Roles
 
-## 🎯 Overview
+### Donor
+- create food donations
+- manage donation listings
+- view incoming requests
+- send direct offers to NGOs
+- confirm completion when both parties have finished the handoff
 
-FreshTrack is a full-stack food donation platform designed to reduce food waste and help communities in need. The platform facilitates connections between:
+### NGO
+- browse available donations
+- request food from donors
+- receive direct offers from donors
+- accept, reject, and complete flows
+- manage request history
 
-- **Donors**: Individuals and businesses with surplus food
-- **NGOs**: Charitable organizations that can collect and distribute food
-- **Admins**: Platform administrators managing users and donations
+### Admin
+- view platform statistics
+- manage users
+- inspect donation data
 
-The application features role-based access control, real-time notifications, and a user-friendly interface built with React and TypeScript.
+## Architecture
 
----
+- Frontend: React + TypeScript + Vite
+- Styling: Tailwind CSS
+- Backend: Node.js + Express
+- Database: MongoDB + Mongoose
+- Auth: JWT
+- Real-time: Socket.IO
+- AI: Groq
 
-## ✨ Features
+## Repository structure
 
-### For Donors
-- 🎁 Post surplus food donations with details (quantity, category, expiry time)
-- 📍 Specify location and pickup details
-- 📸 Add images to donations
-- 📊 Track donation status in real-time
-- 📋 View all posted donations
-- 🔔 Receive notifications when NGOs express interest
-
-### For NGOs
-- 🔍 Browse available food donations
-- 📍 Search by location and category
-- 📝 Request food donations from donors
-- 📊 Track request status (pending, accepted, rejected, completed)
-- 🎯 Manage multiple food requests
-- 🔔 Get notifications when requests are accepted/rejected
-
-### For Admins
-- 👥 Manage all users on the platform
-- 🚫 Disable/enable user accounts
-- 📊 View all donations and their status
-- 📈 Monitor platform activity
-
-### General Features
-- 🔐 Secure authentication with JWT tokens
-- 🎨 Responsive design (mobile, tablet, desktop)
-- 🌙 Modern, clean UI with Tailwind CSS
-- ⚡ Fast performance with Vite
-- 📱 Real-time notifications
-- 🔄 Mock API for development/testing
-
----
-
-## 🏗️ Project Structure
-
-```
-frontend/
-├── src/
-│   ├── components/
-│   │   ├── common/              # Reusable UI components
-│   │   │   ├── Button.tsx
-│   │   │   ├── Input.tsx
-│   │   │   ├── Modal.tsx
-│   │   │   ├── Select.tsx
-│   │   │   ├── StatusBadge.tsx
-│   │   │   ├── Textarea.tsx
-│   │   │   └── ProtectedRoute.tsx  # Route protection with role-based access
-│   │   ├── donation/            # Donation-related components
-│   │   │   ├── DashboardCard.tsx
-│   │   │   └── DonationCard.tsx
-│   │   └── layout/              # Layout components
-│   │       ├── DashboardLayout.tsx
-│   │       ├── Footer.tsx
-│   │       ├── Navbar.tsx
-│   │       └── NotificationDropdown.tsx
-│   ├── context/                 # React Context for state management
-│   │   ├── AuthContext.tsx      # Authentication state
-│   │   └── ToastContext.tsx     # Toast notifications
-│   ├── pages/                   # Page components organized by role
-│   │   ├── ProfilePage.tsx
-│   │   ├── public/
-│   │   │   ├── LandingPage.tsx
-│   │   │   └── AboutPage.tsx
-│   │   ├── auth/
-│   │   │   ├── LoginPage.tsx
-│   │   │   └── RegisterPage.tsx
-│   │   ├── donor/
-│   │   │   ├── DonorDashboard.tsx
-│   │   │   ├── CreateDonation.tsx
-│   │   │   ├── MyDonations.tsx
-│   │   │   └── DonationDetails.tsx
-│   │   ├── ngo/
-│   │   │   ├── NgoDashboard.tsx
-│   │   │   ├── AvailableFood.tsx
-│   │   │   ├── FoodDetails.tsx
-│   │   │   └── MyRequests.tsx
-│   │   └── admin/
-│   │       ├── AdminDashboard.tsx
-│   │       ├── AdminUsers.tsx
-│   │       └── AdminDonations.tsx
-│   ├── services/                # API and business logic
-│   │   ├── api.ts              # Axios configuration and endpoints
-│   │   └── services.ts         # Service layer (auth, donations, requests)
-│   ├── types/                   # TypeScript type definitions
-│   │   └── index.ts
-│   ├── data/                    # Mock data for development
-│   │   └── mockData.ts
-│   ├── context/                 # Global state management
-│   │   ├── AuthContext.tsx
-│   │   └── ToastContext.tsx
-│   ├── App.tsx                  # Main app component with routing
-│   ├── main.tsx                 # App entry point
-│   └── index.css                # Global styles
-├── public/
-│── index.html                   # HTML template
-├── package.json                 # Dependencies and scripts
-├── vite.config.ts              # Vite configuration
-├── tsconfig.json               # TypeScript configuration
-├── tailwind.config.js          # Tailwind CSS configuration
-├── postcss.config.js           # PostCSS configuration
-└── eslint.config.js            # ESLint configuration
+```text
+FreshTrack/
+├── backend/
+│   ├── src/
+│   ├── tests/
+│   ├── .env.example
+│   ├── package.json
+│   └── README.md
+├── frontend/
+│   ├── src/
+│   ├── .env.example
+│   ├── package.json
+│   ├── vite.config.ts
+│   └── index.html
+├── .gitignore
+├── README.md
+└── .github/ (if present)
 ```
 
----
+## Local setup
 
-## 🛠️ Tech Stack
+### 1) Install backend dependencies
 
-### Frontend
-- **React 18.3** - UI framework
-- **TypeScript 5.5** - Type-safe JavaScript
-- **Vite 5.4** - Build tool and dev server
-- **React Router v7** - Client-side routing
-- **TailwindCSS 3.4** - Utility-first CSS framework
-- **Lucide React** - Icon library
-- **Axios** - HTTP client for API calls
-- **Supabase JS** - Backend integration (optional)
-
-### Development Tools
-- **ESLint** - Code linting
-- **TypeScript** - Static type checking
-- **PostCSS** - CSS transformations
-- **Autoprefixer** - CSS vendor prefixes
-
----
-
-## 🚀 Getting Started
-
-### Prerequisites
-- Node.js (v16 or higher)
-- npm or yarn package manager
-
-### Installation
-
-1. **Clone the repository**
-   ```bash
-   cd frontend
-   ```
-
-2. **Install dependencies**
-   ```bash
-   npm install
-   ```
-
-3. **Set up environment variables**
-   Create a `.env.local` file in the `frontend` directory:
-   ```env
-   VITE_API_URL=http://localhost:5000/api
-   ```
-
-4. **Start the development server**
-   ```bash
-   npm run dev
-   ```
-   The application will be available at `http://localhost:5173`
-
----
-
-## 📝 Available Scripts
-
-### Development
 ```bash
+cd backend
+npm install
+```
+
+### 2) Install frontend dependencies
+
+```bash
+cd ../frontend
+npm install
+```
+
+### 3) Create environment files
+
+Backend example:
+
+```bash
+cp .env.example .env
+```
+
+Frontend example:
+
+```bash
+cp .env.example .env
+```
+
+Use production-safe values in `.env`. Do not commit real secrets.
+
+### 4) Start the backend
+
+```bash
+cd backend
 npm run dev
 ```
-Start the Vite development server with hot module replacement (HMR).
 
-### Build
+Backend local URL:
+
+```text
+http://localhost:5000
+```
+
+### 5) Start the frontend
+
 ```bash
+cd frontend
+npm run dev -- --host 0.0.0.0
+```
+
+Frontend local URL:
+
+```text
+http://localhost:5173
+```
+
+## Required environment variables
+
+### Backend
+
+```env
+PORT=5000
+NODE_ENV=development
+MONGODB_USERNAME=your_mongodb_username
+MONGODB_PASSWORD=your_mongodb_password
+MONGODB_CLUSTER=your-cluster-host.mongodb.net
+MONGODB_URI=mongodb+srv://<user>:<password>@<cluster-host>/<database>?retryWrites=true&w=majority
+MONGODB_DB_NAME=freshtrack
+JWT_SECRET=replace_with_a_long_random_secret
+JWT_EXPIRES_IN=7d
+CLIENT_URL=http://localhost:5173
+CORS_ORIGINS=http://localhost:5173,https://your-render-frontend.onrender.com
+ADMIN_NAME=FreshTrack Admin
+ADMIN_EMAIL=admin@freshtrack.local
+ADMIN_PASSWORD=replace_with_secure_admin_password
+MAX_FILE_SIZE_MB=5
+EXPIRY_SWEEP_INTERVAL_MS=60000
+GROQ_API_KEY=replace_with_groq_api_key
+```
+
+### Frontend
+
+```env
+VITE_API_URL=http://localhost:5000/api
+VITE_SOCKET_URL=http://localhost:5000
+```
+
+## Database
+
+FreshTrack uses MongoDB Atlas for persistent data storage. The backend reads the application database URI from `MONGODB_URI` and the database name from `MONGODB_DB_NAME`.
+
+## Image storage
+
+Images are validated, resized, compressed, and stored in MongoDB as data URLs rather than as files on the server filesystem. Legacy `/uploads/...` paths are still normalized when present in older records.
+
+## AI assistant
+
+The backend AI assistant uses the Groq SDK. The API key must be kept server-side and must not be exposed to the frontend.
+
+## Deployment
+
+This project is prepared for Render deployment with the following structure:
+
+- Frontend: Render Static Site
+- Backend: Render Web Service
+- Database: MongoDB Atlas
+
+Typical configuration:
+
+- Frontend root: `frontend/`
+- Backend root: `backend/`
+- Frontend build command: `npm run build`
+- Frontend publish directory: `dist`
+- Backend start command: `npm run start`
+- Frontend SPA rewrite: rewrite all unknown paths to `index.html`
+
+## Known limitations
+
+- Render free backend services may sleep after inactivity.
+- Image payloads are intentionally constrained to keep responses lightweight and storage manageable.
+- Local development still uses a local Atlas-backed database configuration.
+
+## Validation
+
+```bash
+cd backend
+npm test -- --runInBand
+
+cd ../frontend
+npm run typecheck
 npm run build
 ```
-Create an optimized production build in the `dist` directory.
 
-### Preview
-```bash
-npm run preview
-```
-Preview the production build locally.
+## License
 
-### Lint
-```bash
-npm run lint
-```
-Run ESLint to check code quality and style compliance.
+This project is for university coursework and demo use.
 
-### Type Check
-```bash
-npm run typecheck
-```
-Run TypeScript type checking without emitting files.
-
----
-
-## 🔐 Authentication & Authorization
-
-### User Roles
 
 1. **Donor**
    - Can post surplus food donations

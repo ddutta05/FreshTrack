@@ -106,6 +106,36 @@ describe("Phase 1B — API Validation & Location Defaulting", () => {
       expect(res.body.data.currentNeedDescription).toBe("Need 100 boxes of meals today");
     });
 
+    test("NGO can clear currentNeedDescription", async () => {
+      const ngo = await createUser({ role: USER_ROLES.NGO });
+      ngo.currentNeedDescription = "Need 100 boxes of meals today";
+      await ngo.save();
+
+      const res = await request(app)
+        .put("/api/users/me")
+        .set("Authorization", authHeaderFor(ngo))
+        .send({ currentNeedDescription: "" });
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.currentNeedDescription).toBe("");
+      expect((await User.findById(ngo._id)).currentNeedDescription).toBe("");
+    });
+
+    test("NGO can clear their location", async () => {
+      const ngo = await createUser({ role: USER_ROLES.NGO });
+      ngo.location = "Test City";
+      await ngo.save();
+
+      const res = await request(app)
+        .put("/api/users/me")
+        .set("Authorization", authHeaderFor(ngo))
+        .send({ location: "" });
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.location).toBe("");
+      expect((await User.findById(ngo._id)).location).toBe("");
+    });
+
     test("7. Invalid GeoJSON type is rejected", async () => {
       const donor = await createUser({ role: USER_ROLES.DONOR });
       const res = await request(app)

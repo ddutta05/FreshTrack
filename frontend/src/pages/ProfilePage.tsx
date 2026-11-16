@@ -21,6 +21,7 @@ import Button from '@/components/common/Button';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
 import { userService, type UpdateProfilePayload } from '@/services/services';
+import { normalizeApiErrorMessage } from '@/services/api';
 import { LoadingSpinner, ErrorState } from '@/components/common/LoadingSpinner';
 import { FOOD_CATEGORIES, type GeoPoint } from '@/types';
 
@@ -152,7 +153,7 @@ export default function ProfilePage() {
         name: user.role === 'donor' ? form.name : user.name,
         phone: form.phone,
         geoLocation: form.geoLocation,
-        location: user.role === 'ngo' ? form.location.trim() || undefined : undefined,
+        location: user.role === 'ngo' ? form.location.trim() : undefined,
       };
 
       if (user.role === 'ngo') {
@@ -160,15 +161,15 @@ export default function ProfilePage() {
         payload.acceptedCategories = form.acceptedCategories;
         payload.operatingRadiusKm = form.operatingRadiusKm === '' ? null : Number(form.operatingRadiusKm);
         payload.isAcceptingDonations = form.isAcceptingDonations;
-        payload.currentNeedDescription = form.currentNeedDescription ? form.currentNeedDescription.trim() : undefined;
+        payload.currentNeedDescription = form.currentNeedDescription.trim();
       }
 
       const updated = await userService.updateMe(payload);
       updateUser(updated);
       toast('Profile updated successfully!', 'success');
       setEditing(false);
-    } catch {
-      toast('Failed to update profile. Please try again.', 'error');
+    } catch (err) {
+      toast(normalizeApiErrorMessage(err), 'error');
     } finally {
       setLoading(false);
     }
@@ -508,4 +509,3 @@ function InfoRow({ icon: Icon, label, value }: { icon: typeof UserIcon; label: s
     </div>
   );
 }
-

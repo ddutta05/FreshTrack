@@ -62,7 +62,7 @@ export default function AdminDashboard() {
         <DashboardCard icon={<Users className="w-6 h-6" />} label="Total Users" value={stats.totalUsers} color="primary" />
         <DashboardCard icon={<Package className="w-6 h-6" />} label="Total Donations" value={stats.totalDonations} color="blue" />
         <DashboardCard icon={<Clock className="w-6 h-6" />} label="Active Donations" value={stats.availableDonations + stats.pendingDonations + stats.acceptedDonations} color="amber" />
-        <DashboardCard icon={<CheckCircle2 className="w-6 h-6" />} label="Completed" value={stats.completedDonations} color="gray" />
+        <DashboardCard icon={<CheckCircle2 className="w-6 h-6" />} label="Completed Donations" value={stats.completedDonations} color="gray" />
       </div>
 
       <div className="grid lg:grid-cols-2 gap-6">
@@ -90,7 +90,7 @@ export default function AdminDashboard() {
                 </div>
                 <div>
                   <p className="font-medium text-gray-900">Manage Donations</p>
-                  <p className="text-sm text-gray-500">View and remove inappropriate posts</p>
+                  <p className="text-sm text-gray-500">Review donations and remove inappropriate listings</p>
                 </div>
               </div>
               <ArrowRight className="w-5 h-5 text-gray-400" />

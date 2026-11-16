@@ -3,12 +3,17 @@ const DonationOffer = require("../models/DonationOffer");
 const User = require("../models/User");
 const { AppError } = require("../utils/errors");
 const { REQUEST_STATUS, USER_ROLES, NOTIFICATION_TYPES } = require("../utils/constants");
-const { createNotification } = require("./notification.service");
+const { createNotification, emitSessionNotifications } = require("./notification.service");
 const { normalizeStoredImagePath } = require("../utils/imagePath");
 
-function toOfferClient(offerDoc) {
+function toOfferClient(offerDoc, viewer) {
   const donor = offerDoc.donorId && offerDoc.donorId._id ? offerDoc.donorId : null;
   const ngo = offerDoc.ngoId && offerDoc.ngoId._id ? offerDoc.ngoId : null;
+  const viewerId = viewer?.id?.toString();
+  const canViewContact = viewerId && (
+    (viewer.role === USER_ROLES.DONOR && viewerId === (donor?._id || offerDoc.donorId)?.toString()) ||
+    (viewer.role === USER_ROLES.NGO && viewerId === (ngo?._id || offerDoc.ngoId)?.toString())
+  );
 
   const legacyDonation = {
     id: offerDoc._id.toString(),
@@ -54,7 +59,7 @@ function toOfferClient(offerDoc) {
     updatedAt: offerDoc.updatedAt,
     direction: "donor_offer",
     donation: legacyDonation,
-    contact: [REQUEST_STATUS.ACCEPTED, REQUEST_STATUS.COMPLETED].includes(offerDoc.status) ? {
+    contact: canViewContact && [REQUEST_STATUS.ACCEPTED, REQUEST_STATUS.COMPLETED].includes(offerDoc.status) ? {
       donor: donor ? { name: donor.name, phone: donor.phone, email: donor.email } : undefined,
       ngo: ngo ? { name: ngo.organizationName || ngo.name, phone: ngo.phone, email: ngo.email, location: ngo.location || "" } : undefined,
       handoffMessage: "Contact the other party to arrange pickup or drop-off. After the food is handed over, both sides should confirm completion."
@@ -68,33 +73,44 @@ async function createOffer({ donorId, ngoId, foodName, category, quantity, quant
     throw new AppError("NGO not found", 404, "NGO_NOT_FOUND");
   }
 
-  const offer = await DonationOffer.create({
-    donorId,
-    ngoId,
-    targetNgoId: ngoId,
-    foodName,
-    category,
-    quantity,
-    quantityValue: quantityValue !== undefined && quantityValue !== null && quantityValue !== "" ? Number(quantityValue) : undefined,
-    quantityUnit: quantityUnit || undefined,
-    description: description || message || `Direct offer of ${foodName}`,
-    image: image || undefined,
-    location: location || "To arrange with the NGO",
-    geoLocation: geoLocation || undefined,
-    availableUntil: availableUntil ? new Date(availableUntil) : new Date(Date.now() + 24 * 60 * 60 * 1000),
-    message: message || "",
-    status: REQUEST_STATUS.PENDING
-  });
+  const session = await mongoose.startSession();
+  session.startTransaction();
+  try {
+    const [offer] = await DonationOffer.create([{
+      donorId,
+      ngoId,
+      targetNgoId: ngoId,
+      foodName,
+      category,
+      quantity,
+      quantityValue: quantityValue !== undefined && quantityValue !== null && quantityValue !== "" ? Number(quantityValue) : undefined,
+      quantityUnit: quantityUnit || undefined,
+      description: description || message || `Direct offer of ${foodName}`,
+      image: image || undefined,
+      location: location || "To arrange with the NGO",
+      geoLocation: geoLocation || undefined,
+      availableUntil: availableUntil ? new Date(availableUntil) : new Date(Date.now() + 24 * 60 * 60 * 1000),
+      message: message || "",
+      status: REQUEST_STATUS.PENDING
+    }], { session });
 
-  await createNotification({
-    userId: ngoId,
-    type: NOTIFICATION_TYPES.REQUEST_RECEIVED,
-    message: `A donor offered ${quantity} of ${foodName}.`,
-    requestId: offer._id,
-    donationId: offer._id
-  });
+    await createNotification({
+      userId: ngoId,
+      type: NOTIFICATION_TYPES.REQUEST_RECEIVED,
+      message: `A donor offered ${quantity} of ${foodName}.`,
+      requestId: offer._id,
+      donationId: offer._id
+    }, session);
 
-  return offer;
+    await session.commitTransaction();
+    emitSessionNotifications(session);
+    return offer;
+  } catch (error) {
+    await session.abortTransaction();
+    throw error;
+  } finally {
+    session.endSession();
+  }
 }
 
 async function transitionOffer({ offerId, action, actorId, actorRole }) {
@@ -171,6 +187,7 @@ async function transitionOffer({ offerId, action, actorId, actorRole }) {
     }
 
     await session.commitTransaction();
+    emitSessionNotifications(session);
 
     const refreshed = await DonationOffer.findById(offer._id)
       .populate("donorId", "name phone email")

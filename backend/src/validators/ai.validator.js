@@ -3,6 +3,7 @@ const { body } = require("express-validator");
 const MAX_HISTORY_MESSAGES = 10;
 const MAX_HISTORY_CONTENT_LENGTH = 2000;
 const MAX_HISTORY_TOTAL_LENGTH = 10000;
+const MAX_RECOMMENDATION_CONTEXT_LENGTH = 4096;
 
 const chatMessageValidator = [
   body("message")
@@ -15,6 +16,34 @@ const chatMessageValidator = [
     .withMessage("Message cannot be empty")
     .isLength({ max: 4000 })
     .withMessage("Message cannot exceed 4000 characters"),
+  body("displayLocale")
+    .optional()
+    .isString()
+    .isLength({ max: 64 })
+    .bail()
+    .custom((locale) => {
+      try {
+        new Intl.DateTimeFormat(locale);
+        return true;
+      } catch (_error) {
+        return false;
+      }
+    })
+    .withMessage("Display locale must be valid"),
+  body("displayTimeZone")
+    .optional()
+    .isString()
+    .isLength({ max: 100 })
+    .bail()
+    .custom((timeZone) => {
+      try {
+        new Intl.DateTimeFormat("en", { timeZone });
+        return true;
+      } catch (_error) {
+        return false;
+      }
+    })
+    .withMessage("Display time zone must be valid"),
   body("history")
     .optional()
     .isArray({ max: MAX_HISTORY_MESSAGES })
@@ -26,6 +55,12 @@ const chatMessageValidator = [
       for (const item of history) {
         if (!item || !["user", "assistant"].includes(item.role)) {
           throw new Error("History roles must be user or assistant");
+        }
+        if (Object.prototype.hasOwnProperty.call(item, "recommendationContext") &&
+            (item.role !== "assistant" ||
+              typeof item.recommendationContext !== "string" ||
+              item.recommendationContext.length > MAX_RECOMMENDATION_CONTEXT_LENGTH)) {
+          throw new Error("Recommendation context must be a valid assistant history value");
         }
         if (typeof item.content !== "string" || !item.content.trim()) {
           throw new Error("History content must be a non-empty string");

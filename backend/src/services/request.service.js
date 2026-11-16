@@ -11,7 +11,7 @@ const {
   NOTIFICATION_TYPES,
   USER_ROLES
 } = require("../utils/constants");
-const { createNotification } = require("./notification.service");
+const { createNotification, emitSessionNotifications } = require("./notification.service");
 const { expireDonationsAndNotify } = require("./donation.service");
 const { normalizeStoredImagePath } = require("../utils/imagePath");
 
@@ -70,31 +70,43 @@ function toRequestClient(reqDoc) {
 }
 
 async function createDirectOffer({ donorId, ngoId, foodName, category, quantity, description, location, availableUntil, message }) {
-  const ngo = await User.findById(ngoId).select("role status");
-  if (!ngo || ngo.role !== USER_ROLES.NGO || ngo.status === "disabled") {
-    throw new AppError("NGO not found", 404, "NGO_NOT_FOUND");
+  const session = await mongoose.startSession();
+  session.startTransaction();
+  try {
+    const ngo = await User.findById(ngoId).select("role status").session(session);
+    if (!ngo || ngo.role !== USER_ROLES.NGO || ngo.status === "disabled") {
+      throw new AppError("NGO not found", 404, "NGO_NOT_FOUND");
+    }
+
+    const [offer] = await DonationOffer.create([{
+      donorId,
+      ngoId,
+      foodName,
+      category,
+      quantity,
+      description: description || message || `Direct offer of ${foodName}`,
+      location: location || "To arrange with the NGO",
+      availableUntil: availableUntil ? new Date(availableUntil) : new Date(Date.now() + 24 * 60 * 60 * 1000),
+      message: message || "",
+      status: REQUEST_STATUS.PENDING
+    }], { session });
+
+    await createNotification({
+      userId: ngoId,
+      type: NOTIFICATION_TYPES.REQUEST_RECEIVED,
+      message: `A donor offered ${quantity} of ${foodName}.`,
+      requestId: offer._id
+    }, session);
+
+    await session.commitTransaction();
+    emitSessionNotifications(session);
+    return offer;
+  } catch (error) {
+    await session.abortTransaction();
+    throw error;
+  } finally {
+    session.endSession();
   }
-
-  const offer = await DonationOffer.create({
-    donorId,
-    ngoId,
-    foodName,
-    category,
-    quantity,
-    description: description || message || `Direct offer of ${foodName}`,
-    location: location || "To arrange with the NGO",
-    availableUntil: availableUntil ? new Date(availableUntil) : new Date(Date.now() + 24 * 60 * 60 * 1000),
-    message: message || "",
-    status: REQUEST_STATUS.PENDING
-  });
-
-  await createNotification({
-    userId: ngoId,
-    type: NOTIFICATION_TYPES.REQUEST_RECEIVED,
-    message: `A donor offered ${quantity} of ${foodName}.`,
-    requestId: offer._id
-  });
-  return offer;
 }
 
 async function createRequest({ donationId, message, ngoUserId }) {
@@ -164,6 +176,7 @@ async function createRequest({ donationId, message, ngoUserId }) {
     );
 
     await session.commitTransaction();
+    emitSessionNotifications(session);
     return request;
   } catch (error) {
     await session.abortTransaction();
@@ -213,6 +226,7 @@ async function transitionRequest({ requestId, action, actorId, actorRole }) {
       }
       if (request.status === REQUEST_STATUS.COMPLETED) {
         await session.commitTransaction();
+        emitSessionNotifications(session);
         return request;
       }
       if (request.status !== REQUEST_STATUS.ACCEPTED) {
@@ -228,12 +242,24 @@ async function transitionRequest({ requestId, action, actorId, actorRole }) {
         await donation.save({ session });
       }
 
-      if (donation) {
-        await DonationRequest.updateMany(
-          { donationId: donation._id, _id: { $ne: request._id }, status: REQUEST_STATUS.PENDING },
-          { $set: { status: REQUEST_STATUS.REJECTED } },
-          { session }
-        );
+      if (donation && request.direction !== "donor_offer") {
+        const otherPendingRequests = await DonationRequest.find({
+          donationId: donation._id,
+          _id: { $ne: request._id },
+          status: REQUEST_STATUS.PENDING
+        }).select("_id ngoId").session(session);
+
+        for (const otherRequest of otherPendingRequests) {
+          otherRequest.status = REQUEST_STATUS.REJECTED;
+          await otherRequest.save({ session });
+          await createNotification({
+            userId: otherRequest.ngoId,
+            type: NOTIFICATION_TYPES.REQUEST_REJECTED,
+            message: `Your request for "${donation.foodName}" was rejected.`,
+            donationId: donation._id,
+            requestId: otherRequest._id
+          }, session);
+        }
       }
 
       await createNotification(
@@ -299,6 +325,7 @@ async function transitionRequest({ requestId, action, actorId, actorRole }) {
     }
 
     await session.commitTransaction();
+    emitSessionNotifications(session);
 
     const refreshed = await DonationRequest.findById(request._id)
       .populate("ngoId", "name organizationName location acceptedCategories currentNeedDescription isAcceptingDonations operatingRadiusKm phone email")

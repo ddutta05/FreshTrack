@@ -4,8 +4,6 @@ const dotenv = require("dotenv");
 // Load backend/.env regardless of where the node process is started from.
 dotenv.config({ path: path.resolve(__dirname, "../../.env") });
 
-console.log("MongoDB URI configured:", Boolean(process.env.MONGODB_URI));
-
 function normalizeClusterHost(rawCluster) {
   const cluster = (rawCluster || "").trim();
   if (!cluster) return "";

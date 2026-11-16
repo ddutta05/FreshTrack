@@ -20,7 +20,11 @@ export default function DonorDashboard() {
 
   useEffect(() => {
     if (!user) return;
-    Promise.all([donationService.getByDonor(user.id), offerService.getMine(), requestService.getAll()])
+    Promise.all([
+      donationService.getByDonorAll(user.id),
+      offerService.getMineAll(),
+      requestService.getAllPages(),
+    ])
       .then(([donationData, offerData, requestData]) => {
         setDonations(donationData);
         setOffers(offerData);
@@ -34,7 +38,15 @@ export default function DonorDashboard() {
   const active = donations.filter((d) => d.status === 'available' || d.status === 'pending' || d.status === 'accepted').length;
   const completed = donations.filter((d) => d.status === 'completed').length;
   const offersSent = offers.length;
-  const pendingRequests = requests.filter((request) => request.status === 'pending' && request.donorId === user?.id && request.direction !== 'donor_offer').length;
+  const ownedDonationIds = new Set(donations.map((donation) => donation.id));
+  const pendingIncomingRequests = requests.filter((request) => (
+    request.status === 'pending'
+    && request.donorId === user?.id
+    && request.direction !== 'donor_offer'
+    && Boolean(request.donationId && ownedDonationIds.has(request.donationId))
+  ));
+  const pendingRequests = pendingIncomingRequests.length;
+  const donationsWithPendingRequests = new Set(pendingIncomingRequests.map((request) => request.donationId)).size;
   const recent = donations.slice(0, 3);
 
   return (
@@ -55,9 +67,15 @@ export default function DonorDashboard() {
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
         <DashboardCard icon={<Package className="w-6 h-6" />} label="Total Donations" value={total} color="primary" />
         <DashboardCard icon={<Clock className="w-6 h-6" />} label="Active Donations" value={active} color="blue" />
-        <DashboardCard icon={<CheckCircle2 className="w-6 h-6" />} label="Completed" value={completed} color="gray" />
+        <DashboardCard icon={<CheckCircle2 className="w-6 h-6" />} label="Completed Donations" value={completed} color="gray" />
         <DashboardCard icon={<Send className="w-6 h-6" />} label="Offers Sent" value={offersSent} color="primary" />
-        <DashboardCard icon={<AlertCircle className="w-6 h-6" />} label="Pending Incoming Requests" value={pendingRequests} color="amber" />
+        <DashboardCard
+          icon={<AlertCircle className="w-6 h-6" />}
+          label="Pending Requests"
+          value={pendingRequests}
+          detail={`Across ${donationsWithPendingRequests} ${donationsWithPendingRequests === 1 ? 'donation' : 'donations'}`}
+          color="amber"
+        />
       </div>
 
       {/* Recent Donations */}

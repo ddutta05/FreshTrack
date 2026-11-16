@@ -53,8 +53,8 @@ export default function NgoDashboard() {
         <DashboardCard icon={<ShoppingBag className="w-6 h-6" />} label="Available Donations" value={availableCount} color="primary" />
         <DashboardCard icon={<ClipboardList className="w-6 h-6" />} label="My Requests" value={myRequestsCount} color="amber" />
         <DashboardCard icon={<Package className="w-6 h-6" />} label="Offers Received" value={offersReceived} color="primary" />
-        <DashboardCard icon={<Package className="w-6 h-6" />} label="Accepted Donations" value={acceptedCount} color="blue" />
-        <DashboardCard icon={<CheckCircle2 className="w-6 h-6" />} label="Completed Pickups" value={completedCount} color="gray" />
+        <DashboardCard icon={<Package className="w-6 h-6" />} label="Accepted Transactions" value={acceptedCount} color="blue" />
+        <DashboardCard icon={<CheckCircle2 className="w-6 h-6" />} label="Completed Transactions" value={completedCount} color="gray" />
       </div>
 
       {/* Recent Available */}

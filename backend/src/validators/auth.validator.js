@@ -47,6 +47,9 @@ const registerValidator = [
   body("geoLocation")
     .if(body("role").equals(USER_ROLES.NGO))
     .custom((value) => {
+      if (value === undefined || value === null || value === "") {
+        throw new Error("A valid base location is required for NGO accounts");
+      }
       validateGeoLocation(value);
       return true;
     })

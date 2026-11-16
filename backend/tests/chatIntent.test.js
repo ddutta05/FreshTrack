@@ -18,6 +18,14 @@ describe("Structured chat intent", () => {
     });
   });
 
+  test.each([
+    ["Find NGOs that accept Cooked Food.", "Cooked Food"],
+    ["Find available Rice donations.", "Rice"],
+    ["Find NGOs that accept Gluten-Free Meals.", "Gluten-Free Meals"],
+  ])("preserves the full category name in %s", (message, category) => {
+    expect(extractIntent(message).category).toBe(category);
+  });
+
   test("does not turn why not into a repeated recommendation", () => {
     expect(extractIntent("why not", [{ role: "user", content: "find donations" }])).toMatchObject({ kind: "general" });
   });

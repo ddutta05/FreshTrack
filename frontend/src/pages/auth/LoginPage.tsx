@@ -6,6 +6,7 @@ import Select from '@/components/common/Select';
 import Button from '@/components/common/Button';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
+import { normalizeApiErrorMessage } from '@/services/api';
 import type { UserRole } from '@/types';
 
 export default function LoginPage() {
@@ -34,7 +35,7 @@ const [role, setRole] = useState<UserRole>(
       toast(`Welcome back, ${user.name.split(' ')[0]}!`, 'success');
       navigate('/dashboard');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Login failed');
+      setError(normalizeApiErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -53,6 +54,15 @@ const [role, setRole] = useState<UserRole>(
             </Link>
             <h1 className="text-2xl font-bold text-gray-900">Welcome back</h1>
             <p className="text-gray-500 mt-1">Sign in to your account to continue</p>
+          </div>
+
+          <div className="mb-6 grid grid-cols-2 gap-2 rounded-xl bg-gray-100 p-1">
+            <Link to="/login" className="rounded-lg px-3 py-2 text-center text-sm font-medium text-gray-500 hover:text-gray-700 transition-colors">
+              Log In
+            </Link>
+            <Link to={`/register?role=${role}`} className="rounded-lg px-3 py-2 text-center text-sm font-medium text-gray-500 hover:text-gray-700 transition-colors bg-white shadow-sm text-primary-700 ring-1 ring-primary-200">
+              Create Account
+            </Link>
           </div>
 
           <div className="card p-6 sm:p-8">
@@ -83,6 +93,8 @@ const [role, setRole] = useState<UserRole>(
                 />
                 <button
                   type="button"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  aria-pressed={showPassword}
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-3 top-9 text-gray-400 hover:text-gray-600"
                 >
@@ -105,9 +117,6 @@ const [role, setRole] = useState<UserRole>(
                   <input type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} className="rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
                   Remember me
                 </label>
-                <button type="button" className="text-primary-600 hover:text-primary-700 font-medium">
-                  Forgot password?
-                </button>
               </div>
 
               <Button type="submit" className="w-full" disabled={loading}>

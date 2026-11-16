@@ -40,7 +40,7 @@ export default function NgoProfilePage() {
         <Info label="Operating radius" value={ngo.operatingRadiusKm !== undefined ? `${ngo.operatingRadiusKm} km` : 'No limit'} />
         {ngo.currentNeedDescription && <Info label="Current need" value={ngo.currentNeedDescription} />}
         {ngo.offeredDonations && ngo.offeredDonations.length > 0 && <div className="border-t border-gray-100 pt-4"><h2 className="font-semibold text-gray-900">Offered Donations</h2><div className="mt-3 space-y-3">{ngo.offeredDonations.map((donation) => <Link key={donation.id} to={`/donations/${donation.id}`} className="block rounded-lg border border-gray-200 p-3 hover:border-primary-300"><p className="font-medium text-gray-900">{donation.foodName}</p><p className="text-xs text-gray-600">{donation.category} · {donation.quantity} · {donation.location}</p><p className="mt-1 text-xs text-gray-500">Available until {new Date(donation.availableUntil).toLocaleDateString()} · {donation.status}</p></Link>)}</div></div>}
-        {user?.role === 'donor' && ngo.isAcceptingDonations && <Button onClick={() => navigate(`/create-donation?ngoId=${ngo.id}&ngoName=${encodeURIComponent(ngo.organizationName || ngo.name)}`)}><HandHeart className="h-4 w-4" /> Offer Donation</Button>}
+        {user?.role === 'donor' && ngo.isAcceptingDonations && <Button onClick={() => navigate(`/create-donation?ngoId=${ngo.id}&ngoName=${encodeURIComponent(ngo.organizationName || ngo.name)}`)}><HandHeart className="h-4 w-4" /> Send Direct Offer</Button>}
       </div>
     </div>
   </DashboardLayout>;

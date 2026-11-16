@@ -11,11 +11,16 @@ const testChat = asyncHandler(async (req, res) => {
 const chat = asyncHandler(async (req, res) => {
   const result = await generateChatResponse(req.body.message, {
     user: req.user,
-    history: req.body.history
+    history: req.body.history,
+    displayLocale: req.body.displayLocale,
+    displayTimeZone: req.body.displayTimeZone
   });
   return success(res, 200, "AI response generated", {
     message: result.message,
-    recommendations: result.recommendations
+    recommendations: result.recommendations,
+    ...(result.recommendationContext
+      ? { recommendationContext: result.recommendationContext }
+      : {})
   });
 });
 

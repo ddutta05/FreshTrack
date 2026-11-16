@@ -10,9 +10,18 @@ interface DonationCardProps {
   linkTo: string;
   showDonor?: boolean;
   actionLabel?: string;
+  returnTo?: string;
+  requestSummary?: string;
 }
 
-export default function DonationCard({ donation, linkTo, showDonor = false, actionLabel = 'View Details' }: DonationCardProps) {
+export default function DonationCard({
+  donation,
+  linkTo,
+  showDonor = false,
+  actionLabel = 'View Details',
+  returnTo,
+  requestSummary,
+}: DonationCardProps) {
   const [imageFailed, setImageFailed] = useState(false);
   const imageUrl = getDonationImageUrl(donation.image);
 
@@ -57,9 +66,14 @@ export default function DonationCard({ donation, linkTo, showDonor = false, acti
           {showDonor && (
             <p className="text-sm text-gray-500">By {donation.donorName}</p>
           )}
+          {requestSummary && (
+            <p className="text-sm font-medium text-gray-700" aria-label="Incoming request summary">
+              {requestSummary}
+            </p>
+          )}
         </div>
 
-        <Link to={linkTo} className="btn-secondary w-full">
+        <Link to={linkTo} state={returnTo ? { returnTo } : undefined} className="btn-secondary w-full">
           {actionLabel}
         </Link>
       </div>

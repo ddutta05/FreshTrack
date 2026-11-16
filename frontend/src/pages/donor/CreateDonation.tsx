@@ -9,6 +9,7 @@ import Button from '@/components/common/Button';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
 import { donationService } from '@/services/services';
+import { normalizeApiErrorMessage } from '@/services/api';
 import { FOOD_CATEGORIES, QUANTITY_UNITS, type GeoPoint, type QuantityUnit } from '@/types';
 
 export default function CreateDonation() {
@@ -132,9 +133,9 @@ export default function CreateDonation() {
         targetNgoId,
       });
       toast(targetNgoId ? 'Direct Offer sent successfully!' : 'Donation posted successfully!', 'success');
-      navigate('/my-donations');
+      navigate(targetNgoId ? '/my-donations?tab=offers' : '/my-donations');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to post donation');
+      setError(normalizeApiErrorMessage(err));
     } finally {
       setLoading(false);
     }

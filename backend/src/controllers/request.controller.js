@@ -134,7 +134,7 @@ const createDonationRequest = asyncHandler(async (req, res) => {
       .populate("ngoId", "name organizationName location acceptedCategories currentNeedDescription isAcceptingDonations operatingRadiusKm phone email")
       .populate("donorId", "name phone email");
 
-    return success(res, 201, "Donation offer sent successfully", toOfferClient(hydrated));
+    return success(res, 201, "Donation offer sent successfully", toOfferClient(hydrated, req.user));
   }
 
   if (req.user.role !== USER_ROLES.NGO) {
@@ -176,7 +176,7 @@ const acceptRequest = asyncHandler(async (req, res) => {
     actorId: req.user.id,
     actorRole: req.user.role
   });
-  return success(res, 200, "Offer accepted", toOfferClient(updated));
+  return success(res, 200, "Offer accepted", toOfferClient(updated, req.user));
 });
 
 const rejectRequest = asyncHandler(async (req, res) => {
@@ -200,7 +200,7 @@ const rejectRequest = asyncHandler(async (req, res) => {
     actorId: req.user.id,
     actorRole: req.user.role
   });
-  return success(res, 200, "Offer rejected", toOfferClient(updated));
+  return success(res, 200, "Offer rejected", toOfferClient(updated, req.user));
 });
 
 const completeRequest = asyncHandler(async (req, res) => {
@@ -224,7 +224,7 @@ const completeRequest = asyncHandler(async (req, res) => {
     actorId: req.user.id,
     actorRole: req.user.role
   });
-  return success(res, 200, "Offer completed", toOfferClient(updated));
+  return success(res, 200, "Offer completed", toOfferClient(updated, req.user));
 });
 
 module.exports = {

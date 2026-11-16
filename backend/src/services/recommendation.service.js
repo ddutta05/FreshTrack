@@ -392,10 +392,108 @@ async function browseNgosForDonor({ donorId, category, maxDistanceKm }) {
     .sort((a, b) => (a.distanceKm ?? Number.MAX_SAFE_INTEGER) - (b.distanceKm ?? Number.MAX_SAFE_INTEGER));
 }
 
+async function resolveChatRecommendationContext({ userId, role, target, ids, category, maxDistanceKm }) {
+  if (!Array.isArray(ids) || !ids.length) return [];
+
+  const searchRadiusKm = maxDistanceKm === null || maxDistanceKm === undefined
+    ? undefined
+    : Number(maxDistanceKm);
+
+  if (role === USER_ROLES.DONOR && target === "ngo") {
+    const donor = await User.findById(userId).select("role status geoLocation");
+    if (!donor || donor.role !== USER_ROLES.DONOR || donor.status === USER_STATUS.DISABLED) {
+      throw new AppError("Donor account is unavailable", 403, "FORBIDDEN");
+    }
+
+    const center = donor.geoLocation?.coordinates;
+    if (!Array.isArray(center) || center.length !== 2) return [];
+
+    const candidates = await User.find({
+      _id: { $in: ids },
+      role: USER_ROLES.NGO,
+      status: USER_STATUS.ACTIVE,
+      isAcceptingDonations: { $ne: false }
+    });
+    const resolved = new Map();
+
+    for (const ngo of candidates) {
+      const coordinates = ngo.geoLocation?.coordinates;
+      if (!Array.isArray(coordinates) || coordinates.length !== 2) continue;
+
+      const distanceKm = calculateHaversineDistance(center, coordinates);
+      if (searchRadiusKm !== undefined && distanceKm > searchRadiusKm) continue;
+      if (
+        category &&
+        normalizeCategory(category) !== "any" &&
+        !acceptsCategory(ngo.acceptedCategories || [], category)
+      ) continue;
+      if (ngo.operatingRadiusKm != null && distanceKm > ngo.operatingRadiusKm) continue;
+
+      resolved.set(ngo._id.toString(), {
+        ngoId: ngo._id.toString(),
+        organizationName: ngo.organizationName || ngo.name,
+        name: ngo.name,
+        location: ngo.location || "",
+        acceptedCategories: ngo.acceptedCategories || [],
+        operatingRadiusKm: ngo.operatingRadiusKm,
+        isAcceptingDonations: ngo.isAcceptingDonations !== false,
+        currentNeedDescription: ngo.currentNeedDescription || "",
+        distanceKm
+      });
+    }
+
+    return ids.map((id) => resolved.get(id)).filter(Boolean);
+  }
+
+  if (role === USER_ROLES.NGO && target === "donation") {
+    const ngo = await User.findById(userId).select("role status geoLocation");
+    if (!ngo || ngo.role !== USER_ROLES.NGO || ngo.status === USER_STATUS.DISABLED) {
+      throw new AppError("NGO account is unavailable", 403, "FORBIDDEN");
+    }
+
+    const center = ngo.geoLocation?.coordinates;
+    if (!Array.isArray(center) || center.length !== 2) return [];
+
+    const now = new Date();
+    const candidates = await Donation.find({
+      _id: { $in: ids },
+      status: { $in: [DONATION_STATUS.AVAILABLE, DONATION_STATUS.PENDING] },
+      availableUntil: { $gt: now },
+      $or: [{ targetNgoId: { $exists: false } }, { targetNgoId: userId }]
+    });
+    const resolved = new Map();
+
+    for (const donation of candidates) {
+      const coordinates = donation.geoLocation?.coordinates;
+      if (!Array.isArray(coordinates) || coordinates.length !== 2) continue;
+      if (category && !categoryMatches(donation.category, category)) continue;
+
+      const distanceKm = calculateHaversineDistance(center, coordinates);
+      if (searchRadiusKm !== undefined && distanceKm > searchRadiusKm) continue;
+
+      resolved.set(donation._id.toString(), {
+        donationId: donation._id.toString(),
+        foodName: donation.foodName,
+        category: donation.category,
+        quantity: donation.quantity,
+        location: donation.location,
+        availableUntil: donation.availableUntil,
+        status: donation.status,
+        distanceKm
+      });
+    }
+
+    return ids.map((id) => resolved.get(id)).filter(Boolean);
+  }
+
+  return [];
+}
+
 module.exports = {
   findDonationsForNgo,
   findNgosForDonor,
   browseNgosForDonor,
+  resolveChatRecommendationContext,
   calculateHaversineDistance,
   calculateDonorReliability,
   calculateNgoMetrics

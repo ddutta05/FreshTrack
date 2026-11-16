@@ -1,4 +1,5 @@
 import { api, API_ENDPOINTS, clearAuthStorage } from './api';
+import { fetchPaginatedPages } from './pagination';
 import type { User, Donation, DonationRequest, DonationOffer, Notification, UserRole, DonationStatus, GeoPoint, ChatRequest, ChatResponse, NgoProfile, NgoBrowseResult, RegisterPayload } from '@/types';
 
 export interface ListQuery {
@@ -12,6 +13,16 @@ export interface ListQuery {
   sortOrder?: 'asc' | 'desc';
   availability?: 'requestable';
   donationId?: string;
+}
+
+export interface PaginatedResult<T> {
+  items: T[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    pages: number;
+  };
 }
 
 export interface CreateDonationPayload {
@@ -82,6 +93,34 @@ const unwrap = <T,>(payload: unknown): T => {
   return payload as T;
 };
 
+const unwrapPaginated = <T,>(payload: unknown): PaginatedResult<T> => {
+  const body = payload && typeof payload === 'object' && 'data' in payload
+    ? payload.data
+    : payload;
+
+  if (!body || typeof body !== 'object' || !('items' in body) || !Array.isArray(body.items)
+    || !('pagination' in body) || !body.pagination || typeof body.pagination !== 'object') {
+    throw new Error('Invalid paginated API response');
+  }
+
+  const { page, limit, total, pages } = body.pagination as Record<string, unknown>;
+  if (typeof page !== 'number' || typeof limit !== 'number'
+    || typeof total !== 'number' || typeof pages !== 'number') {
+    throw new Error('Invalid pagination metadata in API response');
+  }
+
+  return {
+    items: body.items as T[],
+    pagination: { page, limit, total, pages },
+  };
+};
+
+const fetchAllPages = async <T,>(path: string, query?: ListQuery): Promise<T[]> => {
+  return fetchPaginatedPages<T>((page, limit) => (
+    api.get(withQuery(path, { ...query, page, limit })).then(({ data }) => data)
+  ));
+};
+
 const withQuery = (path: string, query?: ListQuery) => {
   if (!query) return path;
   const params = new URLSearchParams();
@@ -99,6 +138,7 @@ export const authService = {
   async login(email: string, password: string, role: UserRole, rememberMe = false): Promise<User> {
     const { data } = await api.post(API_ENDPOINTS.auth.login, { email, password, role });
     const result = unwrap<{ token: string; user: User }>(data);
+    clearAuthStorage();
     const storage = rememberMe ? localStorage : sessionStorage;
     storage.setItem('freshtrack_token', result.token);
     storage.setItem('freshtrack_user', JSON.stringify(result.user));
@@ -108,6 +148,7 @@ export const authService = {
   async register(payload: RegisterPayload): Promise<User> {
     const { data } = await api.post(API_ENDPOINTS.auth.register, payload);
     const result = unwrap<{ token: string; user: User }>(data);
+    clearAuthStorage();
     localStorage.setItem('freshtrack_token', result.token);
     localStorage.setItem('freshtrack_user', JSON.stringify(result.user));
     return result.user;
@@ -148,6 +189,10 @@ export const donationService = {
   async getByDonor(_donorId: string, query?: ListQuery): Promise<Donation[]> {
     const { data } = await api.get(withQuery(API_ENDPOINTS.donations.myDonations, query));
     return unwrap<Donation[]>(data);
+  },
+
+  async getByDonorAll(_donorId: string): Promise<Donation[]> {
+    return fetchAllPages<Donation>(API_ENDPOINTS.donations.myDonations);
   },
 
   async create(payload: CreateDonationPayload): Promise<Donation> {
@@ -213,6 +258,10 @@ export const requestService = {
     return unwrap<DonationRequest[]>(data);
   },
 
+  async getByDonationAll(donationId: string): Promise<DonationRequest[]> {
+    return fetchAllPages<DonationRequest>(API_ENDPOINTS.requests.list, { donationId });
+  },
+
   async getByNGO(_ngoId: string, query?: ListQuery): Promise<DonationRequest[]> {
     const { data } = await api.get(withQuery(API_ENDPOINTS.requests.myRequests, query));
     return unwrap<DonationRequest[]>(data);
@@ -221,6 +270,10 @@ export const requestService = {
   async getAll(query?: ListQuery): Promise<DonationRequest[]> {
     const { data } = await api.get(withQuery(API_ENDPOINTS.requests.list, query));
     return unwrap<DonationRequest[]>(data);
+  },
+
+  async getAllPages(query?: ListQuery): Promise<DonationRequest[]> {
+    return fetchAllPages<DonationRequest>(API_ENDPOINTS.requests.list, query);
   },
 
   async getById(id: string): Promise<DonationRequest> {
@@ -261,6 +314,10 @@ export const offerService = {
     return unwrap<DonationOffer[]>(data);
   },
 
+  async getMineAll(): Promise<DonationOffer[]> {
+    return fetchAllPages<DonationOffer>(API_ENDPOINTS.offers.mine);
+  },
+
   async getReceived(query?: ListQuery): Promise<DonationOffer[]> {
     const { data } = await api.get(withQuery(API_ENDPOINTS.offers.received, query));
     return unwrap<DonationOffer[]>(data);
@@ -268,48 +325,6 @@ export const offerService = {
 
   async getById(id: string): Promise<DonationOffer> {
     const { data } = await api.get(API_ENDPOINTS.offers.get(id));
-    return unwrap<DonationOffer>(data);
-  },
-
-  async create(payload: {
-    ngoId: string;
-    foodName: string;
-    category: string;
-    quantity: string;
-    quantityValue?: number;
-    quantityUnit?: string;
-    description: string;
-    location: string;
-    geoLocation?: GeoPoint | null;
-    availableUntil: string;
-    imageFile?: File;
-    message?: string;
-  }): Promise<DonationOffer> {
-    const formData = new FormData();
-    formData.append('ngoId', payload.ngoId);
-    formData.append('foodName', payload.foodName);
-    formData.append('category', payload.category);
-    formData.append('quantity', payload.quantity);
-    if (payload.quantityValue !== undefined && payload.quantityValue !== null) {
-      formData.append('quantityValue', String(payload.quantityValue));
-    }
-    if (payload.quantityUnit) {
-      formData.append('quantityUnit', payload.quantityUnit);
-    }
-    formData.append('description', payload.description);
-    formData.append('location', payload.location);
-    if (payload.geoLocation) {
-      formData.append('geoLocation', JSON.stringify(payload.geoLocation));
-    }
-    formData.append('availableUntil', payload.availableUntil);
-    if (payload.imageFile) {
-      formData.append('image', payload.imageFile);
-    }
-    if (payload.message) {
-      formData.append('message', payload.message);
-    }
-
-    const { data } = await api.post(API_ENDPOINTS.offers.create, formData);
     return unwrap<DonationOffer>(data);
   },
 
@@ -355,6 +370,11 @@ export const userService = {
   async getAll(query?: ListQuery): Promise<User[]> {
     const { data } = await api.get(withQuery(API_ENDPOINTS.users.list, query));
     return unwrap<User[]>(data);
+  },
+
+  async getAllPage(query: ListQuery): Promise<PaginatedResult<User>> {
+    const { data } = await api.get(withQuery(API_ENDPOINTS.users.list, query));
+    return unwrapPaginated<User>(data);
   },
 
   async getById(id: string): Promise<User> {
@@ -415,6 +435,11 @@ export const adminService = {
   async getDonations(query?: ListQuery): Promise<Donation[]> {
     const { data } = await api.get(withQuery(API_ENDPOINTS.admin.donations, query));
     return unwrap<Donation[]>(data);
+  },
+
+  async getDonationsPage(query: ListQuery): Promise<PaginatedResult<Donation>> {
+    const { data } = await api.get(withQuery(API_ENDPOINTS.admin.donations, query));
+    return unwrapPaginated<Donation>(data);
   },
 };
 

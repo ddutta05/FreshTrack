@@ -1,8 +1,12 @@
 function notFound(req, _res, next) {
+  const isApiRoute = req.originalUrl.startsWith("/api");
+
   next({
     statusCode: 404,
     code: "NOT_FOUND",
-    message: `Route not found: ${req.method} ${req.originalUrl}`
+    message: isApiRoute
+      ? "The requested API endpoint was not found."
+      : "The requested resource was not found."
   });
 }
 

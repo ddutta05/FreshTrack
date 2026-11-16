@@ -1,7 +1,3 @@
-const path = require("path");
-
-const uploadsDir = path.resolve(__dirname, "../../uploads");
-
 function normalizeStoredImagePath(rawImage) {
   if (!rawImage || typeof rawImage !== "string") return undefined;
 
@@ -33,6 +29,5 @@ function normalizeStoredImagePath(rawImage) {
 }
 
 module.exports = {
-  uploadsDir,
   normalizeStoredImagePath
 };

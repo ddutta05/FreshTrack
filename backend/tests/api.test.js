@@ -91,6 +91,7 @@ describe("FreshTrack Backend API", () => {
       });
 
       expect(res.status).toBe(401);
+      expect(res.body.message).toBe("Invalid credentials");
     });
 
     test("disabled account cannot login", async () => {
@@ -119,6 +120,13 @@ describe("FreshTrack Backend API", () => {
       expect(res.status).toBe(200);
       expect(res.body.data.role).toBe(USER_ROLES.NGO);
       expect(res.body.data.organizationName).toBe("Hope Kitchen");
+    });
+
+    test("returns a user-friendly message for invalid resource ids", async () => {
+      const res = await request(app).get("/api/donations/not-a-valid-id");
+
+      expect(res.status).toBe(422);
+      expect(res.body.message).toBe("We couldn't find that item.");
     });
 
     test("protected endpoint rejects missing jwt", async () => {
@@ -373,6 +381,56 @@ describe("FreshTrack Backend API", () => {
       expect(await Donation.countDocuments()).toBe(beforeDonationCount);
       expect(await require("../src/models/DonationRequest").countDocuments()).toBe(beforeRequestCount);
       expect(await require("../src/models/DonationOffer").countDocuments()).toBe(beforeOfferCount + 1);
+    });
+
+    test("dedicated offers endpoint validates provided dates and preserves its omitted-date default", async () => {
+      const donor = await createUser({ role: USER_ROLES.DONOR });
+      const ngo = await createUser({ role: USER_ROLES.NGO, organizationName: "Date Validation NGO" });
+      const payload = {
+        ngoId: ngo._id.toString(),
+        foodName: "Date validation offer",
+        category: "Rice",
+        quantity: "4 trays",
+        description: "Date validation test",
+        location: "Community Hall"
+      };
+
+      const malformed = await request(app)
+        .post("/api/offers")
+        .set("Authorization", authHeaderFor(donor))
+        .send({ ...payload, availableUntil: "not-a-date" });
+      expect(malformed.status).toBe(422);
+      expect(malformed.body.error.code).toBe("INVALID_AVAILABLE_UNTIL");
+
+      const malformedBoolean = await request(app)
+        .post("/api/offers")
+        .set("Authorization", authHeaderFor(donor))
+        .send({ ...payload, availableUntil: false });
+      expect(malformedBoolean.status).toBe(422);
+      expect(malformedBoolean.body.error.code).toBe("INVALID_AVAILABLE_UNTIL");
+
+      const past = await request(app)
+        .post("/api/offers")
+        .set("Authorization", authHeaderFor(donor))
+        .send({ ...payload, availableUntil: new Date(Date.now() - 60000).toISOString() });
+      expect(past.status).toBe(422);
+      expect(past.body.error.code).toBe("INVALID_AVAILABLE_UNTIL");
+
+      const future = await request(app)
+        .post("/api/offers")
+        .set("Authorization", authHeaderFor(donor))
+        .send({ ...payload, availableUntil: new Date(Date.now() + 86400000).toISOString() });
+      expect(future.status).toBe(201);
+      const futureOffer = await require("../src/models/DonationOffer").findById(future.body.data.id);
+      expect(futureOffer.availableUntil.getTime()).toBeGreaterThan(Date.now());
+
+      const omitted = await request(app)
+        .post("/api/offers")
+        .set("Authorization", authHeaderFor(donor))
+        .send(payload);
+      expect(omitted.status).toBe(201);
+      const defaultedOffer = await require("../src/models/DonationOffer").findById(omitted.body.data.id);
+      expect(defaultedOffer.availableUntil.getTime()).toBeGreaterThan(Date.now());
     });
 
     test("donor can create a direct NGO offer and both parties can complete it", async () => {

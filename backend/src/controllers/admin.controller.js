@@ -11,6 +11,13 @@ const getAdminDonations = asyncHandler(async (req, res) => {
   if (req.query.status) {
     filter.status = req.query.status;
   }
+  if (req.query.search) {
+    const search = new RegExp(req.query.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+    filter.$or = [
+      { foodName: search },
+      { location: search }
+    ];
+  }
 
   const [total, items] = await Promise.all([
     Donation.countDocuments(filter),

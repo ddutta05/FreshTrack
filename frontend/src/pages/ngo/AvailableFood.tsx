@@ -75,7 +75,7 @@ export default function AvailableFood() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
           {donations.map((d) => (
-            <DonationCard key={d.id} donation={d} linkTo={`/food/${d.id}`} showDonor actionLabel="View Details" />
+            <DonationCard key={d.id} donation={d} linkTo={`/food/${d.id}`} showDonor actionLabel="View Details" returnTo="/available-food" />
           ))}
         </div>
       )}
