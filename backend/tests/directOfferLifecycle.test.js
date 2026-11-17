@@ -16,7 +16,9 @@ describe("Direct Offer lifecycle", () => {
       ngoId: ngo._id.toString(),
       foodName: "Repeated Synthetic Rice Offer",
       category: "Rice",
-      quantity: "3 boxes",
+      quantityValue: 3,
+      quantityUnit: "boxes",
+      quantity: "ignored input",
       description: "Synthetic duplicate-offer behavior test",
       location: "Test pickup",
       availableUntil: new Date(Date.now() + 86400000).toISOString()

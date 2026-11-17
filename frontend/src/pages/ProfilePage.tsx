@@ -52,6 +52,8 @@ export default function ProfilePage() {
   });
   const [categoryChoice, setCategoryChoice] = useState('');
   const [customCategory, setCustomCategory] = useState('');
+  const [manualLatitude, setManualLatitude] = useState(user?.geoLocation ? String(user.geoLocation.coordinates[1]) : '');
+  const [manualLongitude, setManualLongitude] = useState(user?.geoLocation ? String(user.geoLocation.coordinates[0]) : '');
 
   useEffect(() => {
     if (!user?.id) return;
@@ -72,6 +74,8 @@ export default function ProfilePage() {
           isAcceptingDonations: freshUser.isAcceptingDonations ?? true,
           currentNeedDescription: freshUser.currentNeedDescription || '',
         });
+        setManualLatitude(freshUser.geoLocation ? String(freshUser.geoLocation.coordinates[1]) : '');
+        setManualLongitude(freshUser.geoLocation ? String(freshUser.geoLocation.coordinates[0]) : '');
       })
       .catch(() => setPageError(true))
       .finally(() => setPageLoading(false));
@@ -95,6 +99,19 @@ export default function ProfilePage() {
     );
   }
 
+  const handleManualCoordinateChange = (axis: 'latitude' | 'longitude', value: string) => {
+    const latitude = axis === 'latitude' ? value : manualLatitude;
+    const longitude = axis === 'longitude' ? value : manualLongitude;
+    if (axis === 'latitude') setManualLatitude(value);
+    else setManualLongitude(value);
+    setForm((current) => ({
+      ...current,
+      geoLocation: latitude.trim() && longitude.trim()
+        ? { type: 'Point', coordinates: [Number(longitude), Number(latitude)] }
+        : null,
+    }));
+  };
+
   const handleGetLocation = () => {
     if (!navigator.geolocation) {
       setLocationError('Geolocation is not supported by your browser.');
@@ -113,6 +130,8 @@ export default function ProfilePage() {
             coordinates: [Number(longitude.toFixed(6)), Number(latitude.toFixed(6))],
           },
         }));
+        setManualLatitude(String(Number(latitude.toFixed(6))));
+        setManualLongitude(String(Number(longitude.toFixed(6))));
         toast('Location captured! Click "Save Changes" to apply.', 'success');
       },
       (err) => {
@@ -136,6 +155,28 @@ export default function ProfilePage() {
   };
 
   const handleSave = async () => {
+    const hasLatitude = manualLatitude.trim() !== '';
+    const hasLongitude = manualLongitude.trim() !== '';
+    if (hasLatitude !== hasLongitude) {
+      toast('Enter both latitude and longitude.', 'error');
+      return;
+    }
+
+    let geoLocation = form.geoLocation;
+    if (hasLatitude && hasLongitude) {
+      const latitude = Number(manualLatitude);
+      const longitude = Number(manualLongitude);
+      if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90) {
+        toast('Latitude must be between -90 and 90.', 'error');
+        return;
+      }
+      if (!Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
+        toast('Longitude must be between -180 and 180.', 'error');
+        return;
+      }
+      geoLocation = { type: 'Point', coordinates: [longitude, latitude] };
+    }
+
     if (user.role === 'ngo') {
       if (form.operatingRadiusKm && (Number.isNaN(Number(form.operatingRadiusKm)) || Number(form.operatingRadiusKm) < 0)) {
         toast('Operating radius must be a valid non-negative number.', 'error');
@@ -152,7 +193,7 @@ export default function ProfilePage() {
       const payload: UpdateProfilePayload = {
         name: user.role === 'donor' ? form.name : user.name,
         phone: form.phone,
-        geoLocation: form.geoLocation,
+        geoLocation,
         location: user.role === 'ngo' ? form.location.trim() : undefined,
       };
 
@@ -188,6 +229,8 @@ export default function ProfilePage() {
       isAcceptingDonations: user.isAcceptingDonations ?? true,
       currentNeedDescription: user.currentNeedDescription || '',
     });
+    setManualLatitude(user.geoLocation ? String(user.geoLocation.coordinates[1]) : '');
+    setManualLongitude(user.geoLocation ? String(user.geoLocation.coordinates[0]) : '');
     setLocationError('');
     setEditing(false);
   };
@@ -291,7 +334,11 @@ export default function ProfilePage() {
                       </div>
                       <button
                         type="button"
-                        onClick={() => setForm({ ...form, geoLocation: null })}
+                        onClick={() => {
+                          setForm({ ...form, geoLocation: null });
+                          setManualLatitude('');
+                          setManualLongitude('');
+                        }}
                         className="text-xs text-red-600 hover:text-red-700 font-medium inline-flex items-center gap-1 px-2 py-1 rounded hover:bg-red-50"
                       >
                         <Trash2 className="w-3.5 h-3.5" /> Clear
@@ -312,6 +359,27 @@ export default function ProfilePage() {
                   >
                     <Navigation className="w-3.5 h-3.5" /> {locating ? 'Detecting Location...' : 'Use My Location'}
                   </Button>
+
+                  <div className="mt-3 grid grid-cols-2 gap-3">
+                    <Input
+                      label="Latitude"
+                      type="number"
+                      min={-90}
+                      max={90}
+                      step="any"
+                      value={manualLatitude}
+                      onChange={(event) => handleManualCoordinateChange('latitude', event.target.value)}
+                    />
+                    <Input
+                      label="Longitude"
+                      type="number"
+                      min={-180}
+                      max={180}
+                      step="any"
+                      value={manualLongitude}
+                      onChange={(event) => handleManualCoordinateChange('longitude', event.target.value)}
+                    />
+                  </div>
 
                   {locationError && (
                     <p className="mt-2 text-xs text-red-600">{locationError}</p>

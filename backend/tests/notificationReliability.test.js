@@ -18,19 +18,19 @@ const offerRoutes = [
   {
     name: "dedicated offers endpoint",
     path: "/api/offers",
-    payload: (ngoId, foodName) => ({ ngoId, foodName, category: "Rice", quantity: "3 boxes", description: "Atomic offer test", location: "Test pickup", availableUntil: new Date(Date.now() + 86400000).toISOString() }),
+    payload: (ngoId, foodName) => ({ ngoId, foodName, category: "Rice", quantityValue: 3, quantityUnit: "boxes", quantity: "ignored input", description: "Atomic offer test", location: "Test pickup", availableUntil: new Date(Date.now() + 86400000).toISOString() }),
     successMessage: "Donation offer created successfully"
   },
   {
     name: "targeted donations endpoint",
     path: "/api/donations",
-    payload: (ngoId, foodName) => ({ targetNgoId: ngoId, foodName, category: "Rice", quantity: "3 boxes", description: "Atomic offer test", location: "Test pickup", availableUntil: new Date(Date.now() + 86400000).toISOString() }),
+    payload: (ngoId, foodName) => ({ targetNgoId: ngoId, foodName, category: "Rice", quantityValue: 3, quantityUnit: "boxes", quantity: "ignored input", description: "Atomic offer test", location: "Test pickup", availableUntil: new Date(Date.now() + 86400000).toISOString(), geoLocation: { type: "Point", coordinates: [77.5946, 12.9716] } }),
     successMessage: "Donation offer created successfully"
   },
   {
     name: "legacy request endpoint direct-offer path",
     path: "/api/requests",
-    payload: (ngoId, foodName) => ({ ngoId, foodName, category: "Rice", quantity: "3 boxes", description: "Atomic offer test", location: "Test pickup", availableUntil: new Date(Date.now() + 86400000).toISOString() }),
+    payload: (ngoId, foodName) => ({ ngoId, foodName, category: "Rice", quantityValue: 3, quantityUnit: "boxes", quantity: "ignored input", description: "Atomic offer test", location: "Test pickup", availableUntil: new Date(Date.now() + 86400000).toISOString() }),
     successMessage: "Donation offer sent successfully"
   }
 ];
@@ -105,11 +105,9 @@ describe("notification persistence reliability", () => {
       expect(await Notification.countDocuments({ userId: ngo._id, requestId: offer._id })).toBe(1);
       expect(await Donation.countDocuments()).toBe(0);
       expect(await DonationRequest.countDocuments()).toBe(0);
-      expect(notification).toMatchObject({
-        type: NOTIFICATION_TYPES.REQUEST_RECEIVED,
-        message: "A donor offered 3 boxes of Atomic Success Offer.",
-        read: false
-      });
+      expect(notification.type).toBe(NOTIFICATION_TYPES.REQUEST_RECEIVED);
+      expect(notification.message).toBe("A donor offered 3 boxes of Atomic Success Offer.");
+      expect(notification.read).toBe(false);
       expect(notification.createdAt).toBeInstanceOf(Date);
       if (path === "/api/requests") {
         expect(notification.donationId).toBeUndefined();

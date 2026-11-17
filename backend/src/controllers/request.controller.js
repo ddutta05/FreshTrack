@@ -110,8 +110,8 @@ const createDonationRequest = asyncHandler(async (req, res) => {
     throw new AppError("Only NGOs can request an existing donation", 403, "FORBIDDEN");
   }
   if (req.user.role === USER_ROLES.DONOR) {
-    if (!req.body.ngoId || !req.body.foodName || !req.body.category || !req.body.quantity) {
-      throw new AppError("NGO, food name, category, and quantity are required", 422, "VALIDATION_ERROR");
+    if (!req.body.ngoId || !req.body.foodName || !req.body.category) {
+      throw new AppError("NGO, food name, and category are required", 422, "VALIDATION_ERROR");
     }
 
     const created = await createDirectOffer({
@@ -119,15 +119,14 @@ const createDonationRequest = asyncHandler(async (req, res) => {
       ngoId: req.body.ngoId,
       foodName: req.body.foodName,
       category: req.body.category,
-      quantity: req.body.quantity,
-      description: req.body.description,
-      location: req.body.location,
-      availableUntil: req.body.availableUntil,
-      message: req.body.message,
-      geoLocation: req.body.geoLocation,
       quantityValue: req.body.quantityValue,
       quantityUnit: req.body.quantityUnit,
-      image: req.body.image
+      description: req.body.description,
+      location: req.body.location,
+      geoLocation: req.body.geoLocation,
+      image: req.body.image,
+      availableUntil: req.body.availableUntil,
+      message: req.body.message
     });
 
     const hydrated = await DonationOffer.findById(created._id)

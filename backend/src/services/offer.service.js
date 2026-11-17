@@ -5,6 +5,7 @@ const { AppError } = require("../utils/errors");
 const { REQUEST_STATUS, USER_ROLES, NOTIFICATION_TYPES } = require("../utils/constants");
 const { createNotification, emitSessionNotifications } = require("./notification.service");
 const { normalizeStoredImagePath } = require("../utils/imagePath");
+const { formatQuantity } = require("../utils/quantity");
 
 function toOfferClient(offerDoc, viewer) {
   const donor = offerDoc.donorId && offerDoc.donorId._id ? offerDoc.donorId : null;
@@ -19,7 +20,7 @@ function toOfferClient(offerDoc, viewer) {
     id: offerDoc._id.toString(),
     foodName: offerDoc.foodName,
     category: offerDoc.category,
-    quantity: offerDoc.quantity,
+    quantity: formatQuantity(offerDoc.quantity, offerDoc.quantityValue, offerDoc.quantityUnit),
     quantityValue: offerDoc.quantityValue,
     quantityUnit: offerDoc.quantityUnit,
     description: offerDoc.description,
@@ -43,7 +44,7 @@ function toOfferClient(offerDoc, viewer) {
     targetNgoName: ngo?.organizationName || ngo?.name || "NGO",
     foodName: offerDoc.foodName,
     category: offerDoc.category,
-    quantity: offerDoc.quantity,
+    quantity: formatQuantity(offerDoc.quantity, offerDoc.quantityValue, offerDoc.quantityUnit),
     quantityValue: offerDoc.quantityValue,
     quantityUnit: offerDoc.quantityUnit,
     description: offerDoc.description,
@@ -67,7 +68,8 @@ function toOfferClient(offerDoc, viewer) {
   };
 }
 
-async function createOffer({ donorId, ngoId, foodName, category, quantity, quantityValue, quantityUnit, description, image, location, geoLocation, availableUntil, message }) {
+async function createOffer({ donorId, ngoId, foodName, category, quantityValue, quantityUnit, description, image, location, geoLocation, availableUntil, message }) {
+  const quantity = `${Number(quantityValue)} ${quantityUnit}`;
   const ngo = await User.findById(ngoId).select("role status organizationName name location acceptedCategories currentNeedDescription isAcceptingDonations operatingRadiusKm phone email");
   if (!ngo || ngo.role !== USER_ROLES.NGO || ngo.status === "disabled") {
     throw new AppError("NGO not found", 404, "NGO_NOT_FOUND");

@@ -5,13 +5,14 @@ import DashboardLayout from '@/components/layout/DashboardLayout';
 import StatusBadge from '@/components/common/StatusBadge';
 import Button from '@/components/common/Button';
 import Input from '@/components/common/Input';
+import Select from '@/components/common/Select';
 import Textarea from '@/components/common/Textarea';
 import { LoadingSpinner, ErrorState } from '@/components/common/LoadingSpinner';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
 import { donationService, requestService } from '@/services/services';
 import { normalizeApiErrorMessage } from '@/services/api';
-import type { Donation, DonationRequest } from '@/types';
+import { QUANTITY_UNITS, type Donation, type DonationRequest, type QuantityUnit } from '@/types';
 import { getDonationImageUrl } from '@/utils/image';
 import { getCompletionMessage, getCompletionState } from '@/utils/workflow';
 
@@ -37,10 +38,13 @@ export default function DonationDetails() {
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState({
     foodName: '',
-    quantity: '',
+    quantityValue: '',
+    quantityUnit: '' as QuantityUnit | '',
     description: '',
     location: '',
     availableUntil: '',
+    latitude: '',
+    longitude: '',
   });
   const acceptedRequest = requests.find((request) => (
     donation
@@ -125,12 +129,17 @@ export default function DonationDetails() {
     if (!donation) return;
     const date = new Date(donation.availableUntil);
     date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+    const quantityUnit = QUANTITY_UNITS.find((unit) => unit === donation.quantityUnit);
+    const hasStructuredQuantity = donation.quantityValue !== undefined && quantityUnit !== undefined;
     setEditForm({
       foodName: donation.foodName,
-      quantity: donation.quantity,
+      quantityValue: hasStructuredQuantity ? String(donation.quantityValue) : '',
+      quantityUnit: hasStructuredQuantity ? quantityUnit : '',
       description: donation.description,
       location: donation.location,
       availableUntil: date.toISOString().slice(0, 16),
+      latitude: donation.geoLocation ? String(donation.geoLocation.coordinates[1]) : '',
+      longitude: donation.geoLocation ? String(donation.geoLocation.coordinates[0]) : '',
     });
     setEditing(true);
   };
@@ -138,10 +147,45 @@ export default function DonationDetails() {
   const handleUpdate = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!id) return;
+
+    const hasQuantityValue = editForm.quantityValue.trim() !== '';
+    const hasQuantityUnit = editForm.quantityUnit !== '';
+    if (hasQuantityValue !== hasQuantityUnit) {
+      toast('Enter both a quantity value and unit.', 'error');
+      return;
+    }
+
+    const hasLatitude = editForm.latitude.trim() !== '';
+    const hasLongitude = editForm.longitude.trim() !== '';
+    if (!hasLatitude || !hasLongitude) {
+      toast('Pickup latitude and longitude are required.', 'error');
+      return;
+    }
+    const latitude = Number(editForm.latitude);
+    const longitude = Number(editForm.longitude);
+    if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90) {
+      toast('Latitude must be between -90 and 90.', 'error');
+      return;
+    }
+    if (!Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
+      toast('Longitude must be between -180 and 180.', 'error');
+      return;
+    }
+
     setActionLoading(true);
     try {
       const updated = await donationService.update(id, {
-        ...editForm,
+        foodName: editForm.foodName,
+        quantity: hasQuantityValue
+          ? `${Number(editForm.quantityValue)} ${editForm.quantityUnit}`
+          : donation?.quantity || '',
+        ...(hasQuantityValue ? {
+          quantityValue: Number(editForm.quantityValue),
+          quantityUnit: editForm.quantityUnit,
+        } : {}),
+        description: editForm.description,
+        location: editForm.location,
+        geoLocation: { type: 'Point', coordinates: [longitude, latitude] },
         availableUntil: new Date(editForm.availableUntil).toISOString(),
       });
       setDonation(updated);
@@ -243,9 +287,19 @@ export default function DonationDetails() {
               {editing ? (
                 <form onSubmit={handleUpdate} className="space-y-4">
                   <Input label="Food Name" value={editForm.foodName} onChange={(event) => setEditForm((current) => ({ ...current, foodName: event.target.value }))} required maxLength={150} />
-                  <Input label="Quantity" value={editForm.quantity} onChange={(event) => setEditForm((current) => ({ ...current, quantity: event.target.value }))} required maxLength={120} />
+                  <div className="grid sm:grid-cols-2 gap-4">
+                    <Input label="Quantity Value" type="number" min="0" step="any" value={editForm.quantityValue} onChange={(event) => setEditForm((current) => ({ ...current, quantityValue: event.target.value }))} />
+                    <Select label="Quantity Unit" value={editForm.quantityUnit} onChange={(event) => setEditForm((current) => ({ ...current, quantityUnit: event.target.value as QuantityUnit }))}>
+                      <option value="">Keep existing quantity</option>
+                      {QUANTITY_UNITS.map((unit) => <option key={unit} value={unit}>{unit}</option>)}
+                    </Select>
+                  </div>
                   <Textarea label="Description" value={editForm.description} onChange={(event) => setEditForm((current) => ({ ...current, description: event.target.value }))} required maxLength={2000} />
                   <Input label="Pickup Location" value={editForm.location} onChange={(event) => setEditForm((current) => ({ ...current, location: event.target.value }))} required maxLength={250} />
+                  <div className="grid sm:grid-cols-2 gap-4">
+                    <Input label="Pickup Latitude" type="number" min={-90} max={90} step="any" value={editForm.latitude} onChange={(event) => setEditForm((current) => ({ ...current, latitude: event.target.value }))} required />
+                    <Input label="Pickup Longitude" type="number" min={-180} max={180} step="any" value={editForm.longitude} onChange={(event) => setEditForm((current) => ({ ...current, longitude: event.target.value }))} required />
+                  </div>
                   <Input label="Available Until" type="datetime-local" value={editForm.availableUntil} onChange={(event) => setEditForm((current) => ({ ...current, availableUntil: event.target.value }))} required min={new Date().toISOString().slice(0, 16)} />
                   <div className="flex justify-end gap-2">
                     <Button type="button" variant="secondary" onClick={() => setEditing(false)} disabled={actionLoading}>Cancel</Button>
@@ -256,15 +310,7 @@ export default function DonationDetails() {
                 <>
                   <div className="grid sm:grid-cols-2 gap-4">
                     <InfoRow icon={Tag} label="Category" value={donation.category} />
-                    <InfoRow
-                      icon={Package}
-                      label="Quantity"
-                      value={
-                        donation.quantityValue !== undefined && donation.quantityUnit
-                          ? `${donation.quantity} (${donation.quantityValue} ${donation.quantityUnit})`
-                          : donation.quantity
-                      }
-                    />
+                    <InfoRow icon={Package} label="Quantity" value={donation.quantity} />
                     <InfoRow icon={MapPin} label="Location" value={donation.location} />
                     <InfoRow icon={Clock} label="Available Until" value={new Date(donation.availableUntil).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })} />
                     <InfoRow icon={Calendar} label="Posted Date" value={new Date(donation.createdAt).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })} />
@@ -344,7 +390,6 @@ export default function DonationDetails() {
 
                         <div className="rounded-lg bg-gray-50 p-4">
                           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                            <p className="text-sm font-semibold text-gray-900">Latest attempt</p>
                             <StatusBadge status={latest.status} type="request" />
                           </div>
                           <p className="mb-2 text-sm text-gray-600">{latest.message || 'No message provided.'}</p>

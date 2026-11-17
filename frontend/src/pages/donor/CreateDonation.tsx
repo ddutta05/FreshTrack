@@ -10,7 +10,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
 import { donationService } from '@/services/services';
 import { normalizeApiErrorMessage } from '@/services/api';
-import { FOOD_CATEGORIES, QUANTITY_UNITS, type GeoPoint, type QuantityUnit } from '@/types';
+import { FOOD_CATEGORIES, QUANTITY_UNITS, type QuantityUnit } from '@/types';
 
 export default function CreateDonation() {
   const { user } = useAuth();
@@ -23,14 +23,14 @@ export default function CreateDonation() {
   const [form, setForm] = useState({
     foodName: '',
     category: '',
-    quantity: '',
     quantityValue: '',
     quantityUnit: '' as QuantityUnit | '',
     description: '',
     availableUntil: '',
     location: '',
   });
-  const [geoLocation, setGeoLocation] = useState<GeoPoint | undefined>(undefined);
+  const [latitude, setLatitude] = useState('');
+  const [longitude, setLongitude] = useState('');
   const [locating, setLocating] = useState(false);
   const [locationError, setLocationError] = useState('');
 
@@ -56,10 +56,8 @@ export default function CreateDonation() {
       (pos) => {
         setLocating(false);
         const { latitude, longitude } = pos.coords;
-        setGeoLocation({
-          type: 'Point',
-          coordinates: [Number(longitude.toFixed(6)), Number(latitude.toFixed(6))],
-        });
+        setLatitude(String(Number(latitude.toFixed(6))));
+        setLongitude(String(Number(longitude.toFixed(6))));
         toast('Location coordinates captured!', 'success');
       },
       (err) => {
@@ -112,8 +110,29 @@ export default function CreateDonation() {
       return;
     }
 
+    if (!hasValue || !hasUnit) {
+      setError('Please enter a quantity value and select its unit.');
+      return;
+    }
+
     if (hasValue && (Number.isNaN(Number(form.quantityValue)) || Number(form.quantityValue) < 0)) {
       setError('Quantity value must be a valid non-negative number.');
+      return;
+    }
+
+    if (!latitude.trim() || !longitude.trim()) {
+      setError('Pickup latitude and longitude are required.');
+      return;
+    }
+
+    const parsedLatitude = Number(latitude);
+    const parsedLongitude = Number(longitude);
+    if (!Number.isFinite(parsedLatitude) || parsedLatitude < -90 || parsedLatitude > 90) {
+      setError('Latitude must be between -90 and 90.');
+      return;
+    }
+    if (!Number.isFinite(parsedLongitude) || parsedLongitude < -180 || parsedLongitude > 180) {
+      setError('Longitude must be between -180 and 180.');
       return;
     }
 
@@ -122,12 +141,15 @@ export default function CreateDonation() {
       await donationService.create({
         foodName: form.foodName,
         category: resolvedCategory || form.category,
-        quantity: form.quantity,
-        quantityValue: hasValue ? Number(form.quantityValue) : undefined,
-        quantityUnit: hasUnit ? form.quantityUnit : undefined,
+        quantity: `${Number(form.quantityValue)} ${form.quantityUnit}`,
+        quantityValue: Number(form.quantityValue),
+        quantityUnit: form.quantityUnit,
         description: form.description,
         location: form.location,
-        geoLocation: geoLocation || undefined,
+        geoLocation: {
+          type: 'Point',
+          coordinates: [parsedLongitude, parsedLatitude],
+        },
         availableUntil: new Date(form.availableUntil).toISOString(),
         imageFile: imageFile || undefined,
         targetNgoId,
@@ -175,22 +197,14 @@ export default function CreateDonation() {
               </Select>
               {otherSelected && <div className="mt-2 flex gap-2"><Input aria-label="Custom category" placeholder="Custom category" value={customCategory} onChange={(e) => setCustomCategory(e.target.value)} /><Button type="button" size="sm" onClick={() => { if (customCategory.trim()) { handleChange('category', customCategory.trim()); setCustomCategory(''); setOtherSelected(false); } }}>Add</Button></div>}
             </div>
-            <Input
-              label="Quantity Display"
-              placeholder="e.g. 15 servings"
-              value={form.quantity}
-              onChange={(e) => handleChange('quantity', e.target.value)}
-              required
-            />
           </div>
 
-          {/* Structured quantity section */}
           <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                Structured Quantity (Optional / Recommended)
+                Quantity
               </span>
-              <span className="text-xs text-gray-400">Used for smart recommendations</span>
+              <span className="text-xs text-gray-400">Enter a number and unit</span>
             </div>
             <div className="grid sm:grid-cols-2 gap-4">
               <Input
@@ -201,11 +215,13 @@ export default function CreateDonation() {
                 placeholder="Quantity"
                 value={form.quantityValue}
                 onChange={(e) => handleChange('quantityValue', e.target.value)}
+                required
               />
               <Select
                 label="Quantity Unit"
                 value={form.quantityUnit}
                 onChange={(e) => handleChange('quantityUnit', e.target.value as QuantityUnit)}
+                required
               >
                 <option value="">Select unit</option>
                 {QUANTITY_UNITS.map((unit) => (
@@ -245,31 +261,36 @@ export default function CreateDonation() {
           {/* Pickup Coordinates Section */}
           <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg space-y-3">
             <label className="label mb-0 flex items-center gap-1.5">
-              <MapPin className="w-4 h-4 text-primary-600" /> Pickup Coordinates (Optional)
+              <MapPin className="w-4 h-4 text-primary-600" /> Pickup Coordinates (Required)
             </label>
             <p className="text-xs text-gray-500">
-              If omitted, FreshTrack will automatically use your profile's base location.
+              Enter the coordinates for this donation's pickup location.
             </p>
 
-            {geoLocation?.coordinates ? (
-              <div className="p-2.5 bg-white border border-gray-200 rounded-lg flex items-center justify-between">
-                <div className="text-xs">
-                  <span className="text-gray-500 font-medium">Selected Coordinates:</span>{' '}
-                  <span className="font-mono font-medium text-gray-900">
-                    Lat {geoLocation.coordinates[1]}, Lng {geoLocation.coordinates[0]}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setGeoLocation(undefined)}
-                  className="text-xs text-red-600 hover:text-red-700 font-medium inline-flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-red-50"
-                >
-                  <Trash2 className="w-3.5 h-3.5" /> Clear
-                </button>
-              </div>
-            ) : (
-              <p className="text-xs text-gray-400">No custom coordinates selected for this pickup.</p>
-            )}
+            <div className="grid sm:grid-cols-2 gap-4">
+              <Input
+                label="Latitude"
+                type="number"
+                min={-90}
+                max={90}
+                step="any"
+                placeholder="23.8103"
+                value={latitude}
+                onChange={(event) => setLatitude(event.target.value)}
+                required
+              />
+              <Input
+                label="Longitude"
+                type="number"
+                min={-180}
+                max={180}
+                step="any"
+                placeholder="90.4125"
+                value={longitude}
+                onChange={(event) => setLongitude(event.target.value)}
+                required
+              />
+            </div>
 
             <Button
               type="button"
@@ -325,4 +346,3 @@ export default function CreateDonation() {
     </DashboardLayout>
   );
 }
-

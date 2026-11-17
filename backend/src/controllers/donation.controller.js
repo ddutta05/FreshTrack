@@ -146,19 +146,7 @@ const createDonation = asyncHandler(async (req, res) => {
 
   const imagePath = await resolveIncomingImage(req);
 
-  let geoLocation = parseGeoLocation(req.body.geoLocation);
-  if (!geoLocation || !geoLocation.coordinates) {
-    // If not explicitly provided, check authenticated donor's User.geoLocation
-    const donorUser = await User.findById(req.user.id);
-    if (donorUser?.geoLocation?.coordinates && donorUser.geoLocation.coordinates.length === 2) {
-      geoLocation = {
-        type: donorUser.geoLocation.type || "Point",
-        coordinates: donorUser.geoLocation.coordinates
-      };
-    } else {
-      geoLocation = undefined;
-    }
-  }
+  const geoLocation = parseGeoLocation(req.body.geoLocation);
 
   const quantityValue =
     req.body.quantityValue !== undefined && req.body.quantityValue !== null && req.body.quantityValue !== ""
@@ -166,10 +154,11 @@ const createDonation = asyncHandler(async (req, res) => {
       : undefined;
   const quantityUnit = req.body.quantityUnit || undefined;
 
+  const quantity = `${quantityValue} ${quantityUnit}`;
   const donationData = {
     foodName: req.body.foodName,
     category: req.body.category,
-    quantity: req.body.quantity,
+    quantity,
     description: req.body.description,
     ...(imagePath ? { image: imagePath } : {}),
     location: req.body.location,
@@ -194,7 +183,6 @@ const createDonation = asyncHandler(async (req, res) => {
       ngoId: req.body.targetNgoId,
       foodName: req.body.foodName,
       category: req.body.category,
-      quantity: req.body.quantity,
       quantityValue: req.body.quantityValue,
       quantityUnit: req.body.quantityUnit,
       description: req.body.description,
@@ -254,7 +242,7 @@ const updateDonation = asyncHandler(async (req, res) => {
     donation.availableUntil = availableUntil;
   }
 
-  const updatable = ["foodName", "category", "quantity", "description", "location"];
+  const updatable = ["foodName", "category", "description", "location"];
   for (const field of updatable) {
     if (req.body[field] !== undefined) {
       donation[field] = req.body[field];
@@ -266,13 +254,10 @@ const updateDonation = asyncHandler(async (req, res) => {
     donation.geoLocation = parsedGeo || undefined;
   }
 
-  if (req.body.quantityValue !== undefined) {
-    const val = req.body.quantityValue;
-    donation.quantityValue = val !== null && val !== "" ? Number(val) : undefined;
-  }
-
-  if (req.body.quantityUnit !== undefined) {
-    donation.quantityUnit = req.body.quantityUnit || undefined;
+  if (req.body.quantityValue !== undefined && req.body.quantityUnit !== undefined) {
+    donation.quantityValue = Number(req.body.quantityValue);
+    donation.quantityUnit = req.body.quantityUnit;
+    donation.quantity = `${donation.quantityValue} ${donation.quantityUnit}`;
   }
 
   const imagePath = await resolveIncomingImage(req);

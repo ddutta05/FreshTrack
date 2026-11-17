@@ -121,7 +121,7 @@ export default function OfferDetailsPage() {
 
               <div className="grid sm:grid-cols-2 gap-4">
                 <InfoRow icon={Tag} label="Category" value={offer.category} />
-                <InfoRow icon={Package} label="Quantity" value={offer.quantityValue !== undefined && offer.quantityUnit ? `${offer.quantity} (${offer.quantityValue} ${offer.quantityUnit})` : offer.quantity} />
+                <InfoRow icon={Package} label="Quantity" value={offer.quantity} />
                 <InfoRow icon={MapPin} label="Location" value={offer.location} />
                 <InfoRow icon={Clock} label="Available Until" value={new Date(offer.availableUntil).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })} />
                 <InfoRow icon={Calendar} label="Posted Date" value={new Date(offer.createdAt).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })} />

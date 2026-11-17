@@ -57,11 +57,11 @@ describe("Donation lifecycle protections", () => {
       await createRequest(donor, ngo, donation, REQUEST_STATUS.ACCEPTED);
       const original = await Donation.findById(donation._id).lean();
       const attemptedChanges = [
-        { foodName: "Changed food name" },
-        { quantity: "Changed display quantity" },
-        { description: "Changed description" },
-        { location: "Changed pickup location" },
-        { availableUntil: new Date(Date.now() + 5 * 86400000).toISOString() }
+        { foodName: "Changed food name", geoLocation: { type: "Point", coordinates: [77.5946, 12.9716] } },
+        { quantity: "Changed display quantity", geoLocation: { type: "Point", coordinates: [77.5946, 12.9716] } },
+        { description: "Changed description", geoLocation: { type: "Point", coordinates: [77.5946, 12.9716] } },
+        { location: "Changed pickup location", geoLocation: { type: "Point", coordinates: [77.5946, 12.9716] } },
+        { availableUntil: new Date(Date.now() + 5 * 86400000).toISOString(), geoLocation: { type: "Point", coordinates: [77.5946, 12.9716] } }
       ];
 
       for (const changes of attemptedChanges) {
@@ -85,7 +85,10 @@ describe("Donation lifecycle protections", () => {
       const availableUpdate = await request(app)
         .put(`/api/donations/${availableDonation._id}`)
         .set("Authorization", authHeaderFor(donor))
-        .send({ foodName: "Available donation edited" });
+        .send({
+          foodName: "Available donation edited",
+          geoLocation: { type: "Point", coordinates: [77.5946, 12.9716] }
+        });
       expect(availableUpdate.status).toBe(200);
       expect(availableUpdate.body.data.foodName).toBe("Available donation edited");
 
@@ -94,7 +97,10 @@ describe("Donation lifecycle protections", () => {
       const rejectedUpdate = await request(app)
         .put(`/api/donations/${rejectedDonation._id}`)
         .set("Authorization", authHeaderFor(donor))
-        .send({ location: "New pickup location" });
+        .send({
+          location: "New pickup location",
+          geoLocation: { type: "Point", coordinates: [77.5946, 12.9716] }
+        });
       expect(rejectedUpdate.status).toBe(200);
       expect(rejectedUpdate.body.data.location).toBe("New pickup location");
       expect((await Donation.findById(rejectedDonation._id)).status).toBe(DONATION_STATUS.AVAILABLE);
@@ -115,7 +121,10 @@ describe("Donation lifecycle protections", () => {
       const response = await request(app)
         .put(`/api/donations/${donation._id}`)
         .set("Authorization", authHeaderFor(donor))
-        .send({ availableUntil: new Date(Date.now() + 5 * 86400000).toISOString() });
+        .send({
+          availableUntil: new Date(Date.now() + 5 * 86400000).toISOString(),
+          geoLocation: { type: "Point", coordinates: [77.5946, 12.9716] }
+        });
 
       expect(response.status).toBe(409);
       expect(response.body.error.code).toBe("DONATION_LOCKED");
@@ -131,7 +140,10 @@ describe("Donation lifecycle protections", () => {
       const response = await request(app)
         .put(`/api/donations/${donation._id}`)
         .set("Authorization", authHeaderFor(donor))
-        .send({ quantity: "Changed after completion" });
+        .send({
+          quantity: "Changed after completion",
+          geoLocation: { type: "Point", coordinates: [77.5946, 12.9716] }
+        });
       expect(response.status).toBe(409);
       expect((await Donation.findById(donation._id)).quantity).toBe(donation.quantity);
     });
@@ -302,10 +314,13 @@ describe("Donation lifecycle protections", () => {
     const fields = (payload) => payload
       .field("foodName", "Upload test food")
       .field("category", "Other")
+      .field("quantityValue", "6")
+      .field("quantityUnit", "boxes")
       .field("quantity", "six containers")
       .field("description", "Upload test")
       .field("location", "Community center")
-      .field("availableUntil", new Date(Date.now() + 86400000).toISOString());
+      .field("availableUntil", new Date(Date.now() + 86400000).toISOString())
+      .field("geoLocation", JSON.stringify({ type: "Point", coordinates: [77.5946, 12.9716] }));
 
     test("accepts and stores a supported image", async () => {
       const donor = await createUser({ role: USER_ROLES.DONOR });

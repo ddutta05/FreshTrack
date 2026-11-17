@@ -201,7 +201,10 @@ describe("FreshTrack Backend API", () => {
       const res = await request(app)
         .put(`/api/donations/${donation._id}`)
         .set("Authorization", authHeaderFor(donorB))
-        .send({ foodName: "Changed" });
+        .send({
+          foodName: "Changed",
+          geoLocation: { type: "Point", coordinates: [77.5946, 12.9716] }
+        });
 
       expect(res.status).toBe(403);
     });
@@ -217,11 +220,14 @@ describe("FreshTrack Backend API", () => {
         .send({
           foodName: "Rice Box",
           category: "Rice",
-          quantity: "5 kg",
+          quantityValue: 5,
+          quantityUnit: "kg",
+          quantity: "ignored input",
           description: "Fresh rice",
           image: "https://example.com/rice.jpg",
           location: "Dhaka",
-          availableUntil: new Date(Date.now() + 86400000).toISOString()
+          availableUntil: new Date(Date.now() + 86400000).toISOString(),
+          geoLocation: { type: "Point", coordinates: [90.4125, 23.8103] }
         });
 
       expect(createRes.status).toBe(201);
@@ -230,7 +236,10 @@ describe("FreshTrack Backend API", () => {
       const updateRes = await request(app)
         .put(`/api/donations/${donationId}`)
         .set("Authorization", authHeaderFor(donor))
-        .send({ location: "Chittagong" });
+        .send({
+          location: "Chittagong",
+          geoLocation: { type: "Point", coordinates: [91.8000, 22.3569] }
+        });
 
       expect(updateRes.status).toBe(200);
       expect(updateRes.body.data.location).toBe("Chittagong");
@@ -369,7 +378,9 @@ describe("FreshTrack Backend API", () => {
           ngoId: ngo._id.toString(),
           foodName: "Chocolates",
           category: "Chocolates",
-          quantity: "3 boxes",
+          quantityValue: 3,
+          quantityUnit: "boxes",
+          quantity: "ignored input",
           description: "Direct offer",
           location: "Community Hall",
           availableUntil: new Date(Date.now() + 86400000).toISOString()
@@ -390,7 +401,9 @@ describe("FreshTrack Backend API", () => {
         ngoId: ngo._id.toString(),
         foodName: "Date validation offer",
         category: "Rice",
-        quantity: "4 trays",
+        quantityValue: 4,
+        quantityUnit: "boxes",
+        quantity: "ignored input",
         description: "Date validation test",
         location: "Community Hall"
       };
@@ -440,7 +453,7 @@ describe("FreshTrack Backend API", () => {
       const offer = await request(app)
         .post("/api/offers")
         .set("Authorization", authHeaderFor(donor))
-        .send({ ngoId: ngo._id.toString(), foodName: "Chocolates", category: "Chocolates", quantity: "5 boxes", message: "For the children" });
+        .send({ ngoId: ngo._id.toString(), foodName: "Chocolates", category: "Chocolates", quantityValue: 5, quantityUnit: "boxes", quantity: "ignored input", message: "For the children" });
 
       expect(offer.status).toBe(201);
       expect(offer.body.data.direction).toBe("donor_offer");

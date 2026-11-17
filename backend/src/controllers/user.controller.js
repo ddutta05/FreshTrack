@@ -6,6 +6,7 @@ const { AppError } = require("../utils/errors");
 const { getPagination, toPagination } = require("../utils/pagination");
 const { USER_ROLES, USER_STATUS } = require("../utils/constants");
 const { parseGeoLocation } = require("../validators/geo.validator");
+const { formatQuantity } = require("../utils/quantity");
 
 const getProfile = asyncHandler(async (req, res) => {
   const user = await User.findById(req.user.id);
@@ -97,7 +98,7 @@ const getNgoProfile = asyncHandler(async (req, res) => {
     phone: user.phone,
     offeredDonations: offeredDonations.map((donation) => ({
       id: donation._id.toString(), foodName: donation.foodName, category: donation.category,
-      quantity: donation.quantity, description: donation.description, availableUntil: donation.availableUntil,
+      quantity: formatQuantity(donation.quantity, donation.quantityValue, donation.quantityUnit), description: donation.description, availableUntil: donation.availableUntil,
       location: donation.location, status: donation.status, image: donation.image
     }))
   });

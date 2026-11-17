@@ -4,6 +4,7 @@ const DonationRequest = require("../models/DonationRequest");
 const { DONATION_STATUS, REQUEST_STATUS, NOTIFICATION_TYPES } = require("../utils/constants");
 const { createNotification, emitSessionNotifications } = require("./notification.service");
 const { normalizeStoredImagePath } = require("../utils/imagePath");
+const { formatQuantity } = require("../utils/quantity");
 
 function toDonationClient(donation) {
   const donorName = donation.donorId?.name || donation.donorName || "Unknown";
@@ -13,7 +14,7 @@ function toDonationClient(donation) {
     id: donation._id.toString(),
     foodName: donation.foodName,
     category: donation.category,
-    quantity: donation.quantity,
+    quantity: formatQuantity(donation.quantity, donation.quantityValue, donation.quantityUnit),
     quantityValue: donation.quantityValue,
     quantityUnit: donation.quantityUnit,
     description: donation.description,

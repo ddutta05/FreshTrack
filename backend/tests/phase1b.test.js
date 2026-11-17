@@ -301,7 +301,7 @@ describe("Phase 1B — API Validation & Location Defaulting", () => {
   // ──────────────────────────────────────────────
 
   describe("Donation Creation & Update (POST / PUT /api/donations)", () => {
-    test("1. Existing old-style donation creation using only quantity string still works", async () => {
+    test("new donations require structured quantity fields", async () => {
       const donor = await createUser({ role: USER_ROLES.DONOR });
       const res = await request(app)
         .post("/api/donations")
@@ -312,15 +312,12 @@ describe("Phase 1B — API Validation & Location Defaulting", () => {
           quantity: "20 kg",
           description: "Fresh bags of rice",
           location: "Downtown Hub",
-          availableUntil: new Date(Date.now() + 86400000).toISOString()
+          availableUntil: new Date(Date.now() + 86400000).toISOString(),
+          geoLocation: { type: "Point", coordinates: [77.5946, 12.9716] }
         });
 
-      expect(res.status).toBe(201);
-      expect(res.body.data.foodName).toBe("Rice Pack");
-      expect(res.body.data.quantity).toBe("20 kg");
-      expect(res.body.data.quantityValue).toBeUndefined();
-      expect(res.body.data.quantityUnit).toBeUndefined();
-      expect(res.body.data.geoLocation).toBeUndefined();
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("VALIDATION_ERROR");
     });
 
     test("2. Donation can be created with quantityValue + quantityUnit", async () => {
@@ -331,17 +328,20 @@ describe("Phase 1B — API Validation & Location Defaulting", () => {
         .send({
           foodName: "Bread Loaves",
           category: "Bakery",
-          quantity: "25 loaves",
+          quantity: "maliciously mismatched text",
           quantityValue: 25,
           quantityUnit: "loaves",
           description: "Freshly baked",
           location: "Sunrise Bakery",
-          availableUntil: new Date(Date.now() + 86400000).toISOString()
+          availableUntil: new Date(Date.now() + 86400000).toISOString(),
+          geoLocation: { type: "Point", coordinates: [77.5946, 12.9716] }
         });
 
       expect(res.status).toBe(201);
+      expect(res.body.data.quantity).toBe("25 loaves");
       expect(res.body.data.quantityValue).toBe(25);
       expect(res.body.data.quantityUnit).toBe("loaves");
+      expect((await Donation.findById(res.body.data.id)).quantity).toBe("25 loaves");
     });
 
     test("3. quantityValue without quantityUnit is rejected", async () => {
@@ -356,7 +356,8 @@ describe("Phase 1B — API Validation & Location Defaulting", () => {
           quantityValue: 25,
           description: "Freshly baked",
           location: "Sunrise Bakery",
-          availableUntil: new Date(Date.now() + 86400000).toISOString()
+          availableUntil: new Date(Date.now() + 86400000).toISOString(),
+          geoLocation: { type: "Point", coordinates: [77.5946, 12.9716] }
         });
 
       expect(res.status).toBe(422);
@@ -375,7 +376,8 @@ describe("Phase 1B — API Validation & Location Defaulting", () => {
           quantityUnit: "loaves",
           description: "Freshly baked",
           location: "Sunrise Bakery",
-          availableUntil: new Date(Date.now() + 86400000).toISOString()
+          availableUntil: new Date(Date.now() + 86400000).toISOString(),
+          geoLocation: { type: "Point", coordinates: [77.5946, 12.9716] }
         });
 
       expect(res.status).toBe(422);
@@ -395,7 +397,8 @@ describe("Phase 1B — API Validation & Location Defaulting", () => {
           quantityUnit: "crates",
           description: "Fresh apples",
           location: "Orchard",
-          availableUntil: new Date(Date.now() + 86400000).toISOString()
+          availableUntil: new Date(Date.now() + 86400000).toISOString(),
+          geoLocation: { type: "Point", coordinates: [77.5946, 12.9716] }
         });
 
       expect(res.status).toBe(422);
@@ -436,6 +439,8 @@ describe("Phase 1B — API Validation & Location Defaulting", () => {
         .send({
           foodName: "Rice Box",
           category: "Rice",
+          quantityValue: 5,
+          quantityUnit: "kg",
           quantity: "5 kg",
           description: "Rice at branch location",
           location: "Branch Office",
@@ -453,7 +458,7 @@ describe("Phase 1B — API Validation & Location Defaulting", () => {
       });
     });
 
-    test("8. Donation without explicit geoLocation copies the authenticated donor's valid User.geoLocation", async () => {
+    test("8. Donation requires explicit pickup coordinates even when the donor has a base location", async () => {
       const donor = await createUser({
         role: USER_ROLES.DONOR
       });
@@ -473,14 +478,12 @@ describe("Phase 1B — API Validation & Location Defaulting", () => {
           availableUntil: new Date(Date.now() + 86400000).toISOString()
         });
 
-      expect(res.status).toBe(201);
-      expect(res.body.data.geoLocation).toEqual({
-        type: "Point",
-        coordinates: [77.5946, 12.9716]
-      });
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("VALIDATION_ERROR");
+      expect(await Donation.countDocuments({ foodName: "Vegetable Soup" })).toBe(0);
     });
 
-    test("9. Donation without explicit geoLocation and without donor geoLocation still works", async () => {
+    test("9. Donation without explicit pickup coordinates is rejected", async () => {
       const donor = await createUser({ role: USER_ROLES.DONOR });
       // Donor has no geoLocation
 
@@ -496,8 +499,31 @@ describe("Phase 1B — API Validation & Location Defaulting", () => {
           availableUntil: new Date(Date.now() + 86400000).toISOString()
         });
 
-      expect(res.status).toBe(201);
-      expect(res.body.data.geoLocation).toBeUndefined();
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("VALIDATION_ERROR");
+      expect(await Donation.countDocuments({ foodName: "Vegetable Soup" })).toBe(0);
+    });
+
+    test.each([
+      [{ type: "Point", coordinates: [181, 12] }, "longitude"],
+      [{ type: "Point", coordinates: [77, 91] }, "latitude"]
+    ])("rejects out-of-range pickup coordinates %j", async (geoLocation) => {
+      const donor = await createUser({ role: USER_ROLES.DONOR });
+      const res = await request(app)
+        .post("/api/donations")
+        .set("Authorization", authHeaderFor(donor))
+        .send({
+          foodName: "Invalid Coordinate Donation",
+          category: "Rice",
+          quantity: "5 kg",
+          description: "Test",
+          location: "Pickup",
+          availableUntil: new Date(Date.now() + 86400000).toISOString(),
+          geoLocation
+        });
+
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("VALIDATION_ERROR");
     });
 
     test("10. Existing donation update behavior remains intact (and allows updating geoLocation / quantity fields)", async () => {
@@ -531,7 +557,7 @@ describe("Phase 1B — API Validation & Location Defaulting", () => {
       });
     });
 
-    test("11. Saved Donation.geoLocation can be cleared on update by sending geoLocation: null", async () => {
+    test("11. Donation pickup coordinates cannot be cleared during update", async () => {
       const donor = await createUser({ role: USER_ROLES.DONOR });
       const donation = await Donation.create({
         foodName: "Has Geo",
@@ -552,11 +578,27 @@ describe("Phase 1B — API Validation & Location Defaulting", () => {
           geoLocation: null
         });
 
-      expect(res.status).toBe(200);
-      expect(res.body.data.geoLocation).toBeUndefined();
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("VALIDATION_ERROR");
 
       const inDb = await Donation.findById(donation._id);
-      expect(inDb.geoLocation).toBeUndefined();
+      expect(inDb.geoLocation.coordinates).toEqual([77.5946, 12.9716]);
+    });
+
+    test("donation edits require a complete pickup coordinate pair", async () => {
+      const donor = await createUser({ role: USER_ROLES.DONOR });
+      const donation = await createDonationForUser(donor);
+      donation.geoLocation = { type: "Point", coordinates: [77.5946, 12.9716] };
+      await donation.save();
+
+      const response = await request(app)
+        .put(`/api/donations/${donation._id}`)
+        .set("Authorization", authHeaderFor(donor))
+        .send({ location: "Updated pickup" });
+
+      expect(response.status).toBe(422);
+      expect(response.body.error.code).toBe("VALIDATION_ERROR");
+      expect((await Donation.findById(donation._id)).location).toBe(donation.location);
     });
   });
 });

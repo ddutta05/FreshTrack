@@ -14,6 +14,7 @@ const {
 const { createNotification, emitSessionNotifications } = require("./notification.service");
 const { expireDonationsAndNotify } = require("./donation.service");
 const { normalizeStoredImagePath } = require("../utils/imagePath");
+const { formatQuantity } = require("../utils/quantity");
 
 function toRequestClient(reqDoc) {
   const donation = reqDoc.donationId && reqDoc.donationId.foodName ? reqDoc.donationId : null;
@@ -53,7 +54,7 @@ function toRequestClient(reqDoc) {
           id: donation._id.toString(),
           foodName: donation.foodName,
           category: donation.category,
-          quantity: donation.quantity,
+          quantity: formatQuantity(donation.quantity, donation.quantityValue, donation.quantityUnit),
           quantityValue: donation.quantityValue,
           quantityUnit: donation.quantityUnit,
           description: donation.description,
@@ -69,7 +70,8 @@ function toRequestClient(reqDoc) {
   };
 }
 
-async function createDirectOffer({ donorId, ngoId, foodName, category, quantity, description, location, availableUntil, message }) {
+async function createDirectOffer({ donorId, ngoId, foodName, category, quantityValue, quantityUnit, description, location, geoLocation, image, availableUntil, message }) {
+  const quantity = `${Number(quantityValue)} ${quantityUnit}`;
   const session = await mongoose.startSession();
   session.startTransaction();
   try {
@@ -84,8 +86,12 @@ async function createDirectOffer({ donorId, ngoId, foodName, category, quantity,
       foodName,
       category,
       quantity,
+      quantityValue: Number(quantityValue),
+      quantityUnit,
       description: description || message || `Direct offer of ${foodName}`,
+      image: image || undefined,
       location: location || "To arrange with the NGO",
+      geoLocation: geoLocation || undefined,
       availableUntil: availableUntil ? new Date(availableUntil) : new Date(Date.now() + 24 * 60 * 60 * 1000),
       message: message || "",
       status: REQUEST_STATUS.PENDING

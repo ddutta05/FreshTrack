@@ -25,7 +25,9 @@ async function createAcceptedOffer() {
       ngoId: ngo._id.toString(),
       foodName: "Accepted offer fixture",
       category: "Rice",
-      quantity: "5 boxes"
+      quantityValue: 5,
+      quantityUnit: "boxes",
+      quantity: "ignored input"
     });
 
   await request(app)

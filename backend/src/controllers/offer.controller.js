@@ -111,8 +111,8 @@ const createDonationOffer = asyncHandler(async (req, res) => {
     throw new AppError("Only donors can create offers", 403, "FORBIDDEN");
   }
 
-  if (!req.body.ngoId || !req.body.foodName || !req.body.category || !req.body.quantity) {
-    throw new AppError("NGO, food name, category, and quantity are required", 422, "VALIDATION_ERROR");
+  if (!req.body.ngoId || !req.body.foodName || !req.body.category) {
+    throw new AppError("NGO, food name, and category are required", 422, "VALIDATION_ERROR");
   }
 
   if (req.body.availableUntil !== undefined && req.body.availableUntil !== null && req.body.availableUntil !== "") {
@@ -127,7 +127,6 @@ const createDonationOffer = asyncHandler(async (req, res) => {
     ngoId: req.body.ngoId,
     foodName: req.body.foodName,
     category: req.body.category,
-    quantity: req.body.quantity,
     quantityValue: req.body.quantityValue,
     quantityUnit: req.body.quantityUnit,
     description: req.body.description,

@@ -9,6 +9,7 @@ const {
   REQUEST_STATUS
 } = require("../utils/constants");
 const { expireDonationsAndNotify } = require("./donation.service");
+const { formatQuantity } = require("../utils/quantity");
 
 /**
  * Calculates distance in kilometers between two GeoJSON [longitude, latitude] points
@@ -212,7 +213,7 @@ async function findDonationsForNgo({
       donationId: donation._id.toString(),
       foodName: donation.foodName,
       category: donation.category,
-      quantity: donation.quantity,
+      quantity: formatQuantity(donation.quantity, donation.quantityValue, donation.quantityUnit),
       quantityValue: donation.quantityValue,
       quantityUnit: donation.quantityUnit,
       location: donation.location,
