@@ -25,6 +25,87 @@ const QUICK_PROMPTS = {
   ],
 } as const;
 
+const MAX_STORED_MESSAGES = 10;
+const CHAT_CONTEXT_TTL_MS = 2 * 60 * 60 * 1000;
+
+interface StoredChatTranscript {
+  version: 1;
+  userId: string;
+  role: 'donor' | 'ngo';
+  expiresAt: number;
+  messages: ChatMessage[];
+  recommendations: Record<number, ChatRecommendation[]>;
+  recommendationContexts: Record<number, string>;
+}
+
+function isChatRecommendation(value: unknown): value is ChatRecommendation {
+  if (!value || typeof value !== 'object') return false;
+  const recommendation = value as Partial<ChatRecommendation>;
+  if (
+    typeof recommendation.id !== 'string'
+    || !Number.isFinite(recommendation.distanceKm)
+  ) return false;
+  if (recommendation.type === 'ngo') {
+    return typeof recommendation.name === 'string'
+      && typeof recommendation.location === 'string'
+      && Array.isArray(recommendation.acceptedCategories)
+      && recommendation.acceptedCategories.every((category) => typeof category === 'string')
+      && typeof recommendation.isAcceptingDonations === 'boolean';
+  }
+  return recommendation.type === 'donation'
+    && typeof recommendation.foodName === 'string'
+    && typeof recommendation.category === 'string'
+    && typeof recommendation.quantity === 'string'
+    && typeof recommendation.location === 'string'
+    && typeof recommendation.availableUntil === 'string';
+}
+
+function parseStoredTranscript(value: string, userId: string, role: 'donor' | 'ngo'): StoredChatTranscript | null {
+  try {
+    const stored = JSON.parse(value) as Partial<StoredChatTranscript>;
+    if (
+      stored.version !== 1
+      || stored.userId !== userId
+      || stored.role !== role
+      || typeof stored.expiresAt !== 'number'
+      || stored.expiresAt <= Date.now()
+      || !Array.isArray(stored.messages)
+      || stored.messages.length > MAX_STORED_MESSAGES
+    ) return null;
+
+    const messages = stored.messages.filter((item): item is ChatMessage =>
+      Boolean(item)
+      && (item.role === 'user' || item.role === 'assistant')
+      && typeof item.content === 'string'
+      && item.content.length <= 2000
+    );
+    if (messages.length !== stored.messages.length) return null;
+    const recommendations: Record<number, ChatRecommendation[]> = {};
+    for (const [index, items] of Object.entries(stored.recommendations || {})) {
+      if (!/^\d+$/.test(index) || Number(index) >= messages.length || !Array.isArray(items)) continue;
+      const validItems = items.filter(isChatRecommendation);
+      if (validItems.length) recommendations[Number(index)] = validItems;
+    }
+    const recommendationContexts: Record<number, string> = {};
+    for (const [index, context] of Object.entries(stored.recommendationContexts || {})) {
+      if (/^\d+$/.test(index) && Number(index) < messages.length && typeof context === 'string' && context.length <= 4096) {
+        recommendationContexts[Number(index)] = context;
+      }
+    }
+    return {
+      version: 1,
+      userId,
+      role,
+      expiresAt: stored.expiresAt,
+      messages,
+      recommendations,
+      recommendationContexts,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export default function FreshTrackAssistant() {
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
@@ -32,6 +113,7 @@ export default function FreshTrackAssistant() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [recommendations, setRecommendations] = useState<Record<number, ChatRecommendation[]>>({});
   const [recommendationContexts, setRecommendationContexts] = useState<Record<number, string>>({});
+  const [loadedTranscriptKey, setLoadedTranscriptKey] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const endOfMessagesRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -44,19 +126,36 @@ export default function FreshTrackAssistant() {
 
   useEffect(() => {
     if (!user || user.role === 'admin') return;
-    const storageKey = `freshtrack_ai_chat_${user.id}`;
+    const storageKey = `freshtrack_ai_chat_${user.id}_${user.role}`;
     const stored = sessionStorage.getItem(storageKey);
-    if (stored) {
-      try { setMessages(JSON.parse(stored)); } catch { setMessages([initialMessage(user.role)]); }
-    } else {
-      setMessages([initialMessage(user.role)]);
-    }
+    const transcript = stored ? parseStoredTranscript(stored, user.id, user.role) : null;
+    setMessages(transcript?.messages || [initialMessage(user.role)]);
+    setRecommendations(transcript?.recommendations || {});
+    setRecommendationContexts(transcript?.recommendationContexts || {});
+    setLoadedTranscriptKey(storageKey);
   }, [user?.id, user?.role]);
 
   useEffect(() => {
     if (!user || user.role === 'admin' || messages.length === 0) return;
-    sessionStorage.setItem(`freshtrack_ai_chat_${user.id}`, JSON.stringify(messages.slice(-10)));
-  }, [messages, user?.id, user?.role]);
+    const storageKey = `freshtrack_ai_chat_${user.id}_${user.role}`;
+    if (loadedTranscriptKey !== storageKey) return;
+    const offset = Math.max(0, messages.length - MAX_STORED_MESSAGES);
+    const storedMessages = messages.slice(offset);
+    const trimIndexedState = <T,>(state: Record<number, T>): Record<number, T> =>
+      Object.fromEntries(Object.entries(state)
+        .filter(([index]) => Number(index) >= offset && Number(index) < messages.length)
+        .map(([index, value]) => [Number(index) - offset, value]));
+    const transcript: StoredChatTranscript = {
+      version: 1,
+      userId: user.id,
+      role: user.role,
+      expiresAt: Date.now() + CHAT_CONTEXT_TTL_MS,
+      messages: storedMessages,
+      recommendations: trimIndexedState(recommendations),
+      recommendationContexts: trimIndexedState(recommendationContexts),
+    };
+    sessionStorage.setItem(storageKey, JSON.stringify(transcript));
+  }, [messages, recommendations, recommendationContexts, loadedTranscriptKey, user?.id, user?.role]);
 
   useEffect(() => {
     endOfMessagesRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -75,6 +174,7 @@ export default function FreshTrackAssistant() {
     if (!content || loading) return;
 
     const nextUserMessage: ChatMessage = { role: 'user', content };
+    const assistantIndex = messages.length + 1;
     const historyStart = Math.max(0, messages.length - 10);
     const history = messages.slice(-10).map((item, index) => {
       const recommendationContext = recommendationContexts[historyStart + index];
@@ -94,17 +194,17 @@ export default function FreshTrackAssistant() {
         displayTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       });
       const responseContext = response.recommendationContext;
-      setMessages((current) => {
-        const assistantIndex = current.length;
-        setRecommendations((existing) => ({ ...existing, [assistantIndex]: response.recommendations || [] }));
-        if (responseContext) {
-          setRecommendationContexts((existing) => ({
-            ...existing,
-            [assistantIndex]: responseContext,
-          }));
-        }
-        return [...current, { role: 'assistant', content: response.message }];
-      });
+      setMessages((current) => [...current, { role: 'assistant', content: response.message }]);
+      setRecommendations((existing) => ({
+        ...existing,
+        [assistantIndex]: response.recommendations || [],
+      }));
+      if (responseContext) {
+        setRecommendationContexts((existing) => ({
+          ...existing,
+          [assistantIndex]: responseContext,
+        }));
+      }
     } catch {
       setMessages((current) => [
         ...current,

@@ -1,35 +1,47 @@
 const crypto = require("crypto");
-const Groq = require("groq-sdk");
 const env = require("../config/env");
 const { AppError } = require("../utils/errors");
 const { USER_ROLES } = require("../utils/constants");
 const recommendationService = require("./recommendation.service");
-const {
-  extractIntent,
-  capabilityMessage,
-  isRecommendationFollowUp,
-  normalizeCategory
-} = require("./chatIntent.service");
 
-const DEFAULT_MODEL = "openai/gpt-oss-20b";
-const MAX_TOOL_ROUNDS = 3;
-const MAX_HISTORY_MESSAGES = 10;
-const MAX_HISTORY_CONTENT_LENGTH = 2000;
-const MAX_HISTORY_TOTAL_LENGTH = 10000;
+// Change this value to "openrouter" to use the alternative provider.
+const ACTIVE_AI_PROVIDER = "groq";
+const AI_PROVIDERS = {
+  groq: {
+    name: "Groq",
+    endpoint: "https://api.groq.com/openai/v1/chat/completions",
+    apiKeyEnv: "groqApiKey",
+    model: "openai/gpt-oss-20b"
+  },
+  openrouter: {
+    name: "OpenRouter",
+    endpoint: "https://openrouter.ai/api/v1/chat/completions",
+    apiKeyEnv: "openRouterApiKey",
+    model: "nvidia/nemotron-3.5-lightning:free"
+  }
+};
 const RECOMMENDATION_CONTEXT_TTL_MS = 2 * 60 * 60 * 1000;
 
-const SYSTEM_INSTRUCTION = `You are the FreshTrack Assistant, a friendly and concise assistant helping donors and NGOs use the FreshTrack food donation platform.
+function getProviderConfig(provider = ACTIVE_AI_PROVIDER) {
+  const config = AI_PROVIDERS[provider];
+  if (!config) throw new Error(`Unknown AI provider: ${provider}`);
+  return { ...config, apiKey: env[config.apiKeyEnv] };
+}
+
+const SYSTEM_INSTRUCTION = `You are the FreshTrack Assistant, a friendly and concise assistant helping reduce food waste by connecting food donors with NGOs through FreshTrack.
 
 Your core guidelines:
-1. Help donors and NGOs understand how FreshTrack works and how to use the platform effectively.
-2. Answer questions about food donation categories, freshness and safety guidelines, pickup coordination, and platform features.
-3. Be concise, polite, and helpful in all responses.
-4. Never invent or hallucinate donor or NGO contact information, quantities, locations, or food availability.
-5. Never claim to have direct database access or know real-time database listings unless a FreshTrack backend tool explicitly provides it.
-6. For recommendation requests, use the available FreshTrack recommendation tool. Never invent availability, distance, ranking, or candidates. Only use a distance limit when the user explicitly requests one.
-7. The backend injects the authenticated user's identity. Never request or use donor IDs, NGO IDs, JWTs, coordinates, or other authorization identifiers.
-8. Donors should use find_nearby_ngos and NGOs should use find_nearby_donations. Ask a concise clarification question when the food category is unclear.
-9. When presenting recommendations, explain relevant returned reasons such as distance, category compatibility, availability, or expiry. Do not expose raw score formulas.`;
+1. Identify yourself as the FreshTrack Assistant and explain FreshTrack as a platform for sharing surplus food with NGOs.
+2. Donors can create and manage donations, find NGOs accepting relevant food categories, review incoming requests, accept or reject requests, send Direct Offers from an NGO profile, coordinate handoff, and confirm completion.
+3. NGOs can find available donations by category and location, submit ordinary Donation Requests, track request statuses, review and accept or reject Direct Offers, coordinate handoff, and confirm completion.
+4. An ordinary Donation Request is made by an NGO for an available donation. A Direct Offer is made by a Donor to an NGO from its profile. These are separate workflows.
+5. After a request or Direct Offer is accepted, the parties can use Contact & Handoff to coordinate collection. Both parties use the existing confirmation process to complete the transaction.
+6. Answer platform, food donation, freshness, and safe-handling questions naturally and in simple language. Follow applicable local food-safety requirements.
+7. Live NGO and donation availability must come only from verified FreshTrack results. Never claim a search was performed unless the backend returned those results. Apply a distance limit only when the user explicitly requested one.
+8. Never invent contact information, quantities, locations, food availability, live statistics, candidates, distances, rankings, or completed actions.
+9. The backend supplies the authenticated identity and executes tools. Never request or use account IDs, JWTs, or authorization coordinates.
+10. You cannot send offers, submit requests, change transactions, or automatically schedule pickups through chat. Explain the appropriate FreshTrack page or that the parties can coordinate after acceptance. Ask for clarification only when genuinely needed.
+11. Be concise, polite, and natural. Vary phrasing when appropriate, and do not repeat fixed templates.`;
 
 function systemInstructionForRole(role) {
   const roleName = role === USER_ROLES.DONOR
@@ -57,74 +69,56 @@ Current FreshTrack features include profile management, donation creation and ma
 If the user asks for another role's workflow, explain the correct workflow for the authenticated role instead of pretending their role changed.`;
 }
 
-function knownFeatureAnswer(message, role) {
-  if (role === USER_ROLES.DONOR && /\bhow\s+do\s+i\s+create\s+a\s+donation\b/i.test(message || "")) {
-    return "Open Create Donation from your donor dashboard, enter the food name, category, quantity, description, availability date, and pickup location, then submit the form. You can optionally add an image and pickup coordinates. After posting, manage the donation from My Donations and review NGO requests there.";
-  }
-  return null;
-}
-
-function groundedRecommendationMessage(recommendations, toolError) {
+function groundedRecommendationMessage(recommendations, toolError, intent) {
   if (toolError) return toolError;
-  if (!recommendations.length) return "I couldn't find any matching recommendations right now.";
+  if (!recommendations.length) {
+    if (intent?.target === "ngo") {
+      return intent.category
+        ? `I couldn't find matching organisations accepting ${intent.category} near your location right now. You can try another food category or search a wider area.`
+        : "I couldn't find matching organisations near your location right now. You can try a food category or search a wider area.";
+    }
+    return intent?.category
+      ? `I couldn't find available ${intent.category} donations near your location right now. You can try another food category or search a wider area.`
+      : "I couldn't find matching available donations near your location right now. You can try another food category or search a wider area.";
+  }
   const kind = recommendations[0].type === "ngo" ? "NGO" : "donation";
-  const distance = recommendations[0].distanceKm !== undefined ? ` The closest result is ${recommendations[0].distanceKm} km away.` : "";
+  const firstDistance = recommendations[0]?.distanceKm;
+  const distanceLabel = intent?.sortByDistance
+    ? intent.distanceSortOrder === "descending"
+      ? "The farthest result is"
+      : "The nearest result is"
+    : "The first result is";
+  const distance = typeof firstDistance === "number"
+    ? ` ${distanceLabel} ${firstDistance} km away.`
+    : "";
   return `I found ${recommendations.length} matching ${kind}${recommendations.length === 1 ? "" : "s"}.${distance} I've shown the verified results below.`;
 }
 
-const FIND_NEARBY_DONATIONS_TOOL = {
+const CLASSIFY_CHAT_INTENT_TOOL = {
   type: "function",
   function: {
-    name: "find_nearby_donations",
-    description: "Find suitable nearby donations for the authenticated NGO.",
+    name: "classify_freshtrack_message",
+    description: "Classify the latest message using its meaning and conversation context.",
+    strict: true,
     parameters: {
       type: "object",
       properties: {
-        category: {
-          anyOf: [{ type: "string" }, { type: "null" }],
-          description: "Optional food category to match, such as Rice or Chocolates."
+        action: {
+          type: "string",
+          enum: ["search", "general", "unsupported"]
         },
-        maxDistanceKm: {
-          anyOf: [{ type: "number" }, { type: "null" }],
-          description: "Optional search radius in kilometers. Maximum 50 km."
-        }
+        target: { anyOf: [{ type: "string", enum: ["ngo", "donation"] }, { type: "null" }] },
+        category: { anyOf: [{ type: "string" }, { type: "null" }] },
+        maxDistanceKm: { anyOf: [{ type: "number" }, { type: "null" }] },
+        sortByDistance: { type: "boolean" },
+        distanceSortOrder: { type: "string", enum: ["ascending", "descending"] },
+        reply: { type: "string" }
       },
-      required: []
+      required: ["action", "target", "category", "maxDistanceKm", "sortByDistance", "distanceSortOrder", "reply"],
+      additionalProperties: false
     }
   }
 };
-
-const FIND_NEARBY_NGOS_TOOL = {
-  type: "function",
-  function: {
-    name: "find_nearby_ngos",
-    description: "Find suitable nearby NGOs for the authenticated donor.",
-    parameters: {
-      type: "object",
-      properties: {
-        category: {
-          type: "string",
-          description: "Food category the donor wants to donate."
-        },
-        donationId: {
-          type: "string",
-          description: "Optional FreshTrack donation ID for a specific existing donation."
-        },
-        maxDistanceKm: {
-          anyOf: [{ type: "number" }, { type: "null" }],
-          description: "Optional search radius in kilometers. Maximum 50 km."
-        }
-      },
-      required: []
-    }
-  }
-};
-
-function toolsForRole(role) {
-  if (role === USER_ROLES.NGO) return [FIND_NEARBY_DONATIONS_TOOL];
-  if (role === USER_ROLES.DONOR) return [FIND_NEARBY_NGOS_TOOL];
-  return [];
-}
 
 function parseToolArguments(toolCall) {
   const rawArguments = toolCall?.function?.arguments || "{}";
@@ -151,60 +145,43 @@ function validateDonationArguments(args) {
   if (args.category !== undefined && args.category !== null && (typeof args.category !== "string" || !args.category.trim() || args.category.length > 80)) {
     throw new AppError("Please specify a valid food category.", 422, "AI_TOOL_ARGUMENTS_ERROR");
   }
+  if (args.sortByDistance !== undefined && typeof args.sortByDistance !== "boolean") {
+    throw new AppError("sortByDistance must be a boolean", 422, "AI_TOOL_ARGUMENTS_ERROR");
+  }
+  if (args.distanceSortOrder !== undefined && !["ascending", "descending"].includes(args.distanceSortOrder)) {
+    throw new AppError("distanceSortOrder must be ascending or descending", 422, "AI_TOOL_ARGUMENTS_ERROR");
+  }
   return {
     category: args.category === null ? undefined : args.category,
-    maxDistanceKm: args.maxDistanceKm === null ? undefined : args.maxDistanceKm
+    maxDistanceKm: args.maxDistanceKm === null ? undefined : args.maxDistanceKm,
+    sortByDistance: args.sortByDistance === true,
+    distanceSortOrder: args.distanceSortOrder || "ascending"
   };
 }
 
 function validateNgoArguments(args) {
   validateDistance(args.maxDistanceKm);
-  if (args.category !== undefined &&
+  if (args.category !== undefined && args.category !== null &&
       (typeof args.category !== "string" || !args.category.trim() || args.category.length > 80)) {
     throw new AppError("Please specify a valid food category.", 422, "AI_TOOL_ARGUMENTS_ERROR");
   }
-  if (args.donationId !== undefined &&
-      (typeof args.donationId !== "string" || !/^[a-f\\d]{24}$/i.test(args.donationId))) {
+  if (args.donationId !== undefined && args.donationId !== null && args.donationId !== "" &&
+      (typeof args.donationId !== "string" || !/^[a-f\d]{24}$/i.test(args.donationId))) {
     throw new AppError("The donation ID is invalid.", 422, "AI_TOOL_ARGUMENTS_ERROR");
   }
+  if (args.sortByDistance !== undefined && typeof args.sortByDistance !== "boolean") {
+    throw new AppError("sortByDistance must be a boolean", 422, "AI_TOOL_ARGUMENTS_ERROR");
+  }
+  if (args.distanceSortOrder !== undefined && !["ascending", "descending"].includes(args.distanceSortOrder)) {
+    throw new AppError("distanceSortOrder must be ascending or descending", 422, "AI_TOOL_ARGUMENTS_ERROR");
+  }
   return {
-    category: args.category,
-    donationId: args.donationId,
-    maxDistanceKm: args.maxDistanceKm === null ? undefined : args.maxDistanceKm
+    category: args.category === null ? undefined : args.category,
+    ...(args.donationId ? { donationId: args.donationId } : {}),
+    maxDistanceKm: args.maxDistanceKm === null ? undefined : args.maxDistanceKm,
+    sortByDistance: args.sortByDistance === true,
+    distanceSortOrder: args.distanceSortOrder || "ascending"
   };
-}
-
-function enforceExplicitDistance(toolCall, message) {
-  const explicitDistance = /\b(?:within|under|below|less than|up to)\s+\d+(?:\.\d+)?\s*(?:km|kilometers?)\b/i.test(message || "");
-  if (explicitDistance) return toolCall;
-
-  try {
-    const args = JSON.parse(toolCall.function.arguments || "{}");
-    if (args && typeof args === "object") delete args.maxDistanceKm;
-    return { ...toolCall, function: { ...toolCall.function, arguments: JSON.stringify(args) } };
-  } catch (_error) {
-    return toolCall;
-  }
-}
-
-function sanitizeHistory(history) {
-  if (!Array.isArray(history)) return [];
-
-  const limitedHistory = history.slice(-MAX_HISTORY_MESSAGES);
-  const sanitized = [];
-  let totalLength = 0;
-
-  for (const item of limitedHistory) {
-    if (!item || !["user", "assistant"].includes(item.role) || typeof item.content !== "string") {
-      continue;
-    }
-    const content = item.content.trim().slice(0, MAX_HISTORY_CONTENT_LENGTH);
-    if (!content || totalLength + content.length > MAX_HISTORY_TOTAL_LENGTH) break;
-    sanitized.push({ role: item.role, content });
-    totalLength += content.length;
-  }
-
-  return sanitized;
 }
 
 async function executeTool(toolCall, user) {
@@ -213,76 +190,56 @@ async function executeTool(toolCall, user) {
 
   if (toolName === "find_nearby_donations" && user.role === USER_ROLES.NGO) {
     const validated = validateDonationArguments(args);
-    return recommendationService.findDonationsForNgo({
+    const result = await recommendationService.findDonationsForNgo({
       ngoId: user.id,
       maxDistanceKm: validated.maxDistanceKm,
+      sortByDistance: validated.sortByDistance,
+      distanceSortOrder: validated.distanceSortOrder,
       ...(validated.category !== undefined ? { category: validated.category } : {})
     });
+    return {
+      result,
+      intent: {
+        target: "donation",
+        category: validated.category || null,
+        maxDistanceKm: validated.maxDistanceKm ?? null,
+        sortByDistance: validated.sortByDistance,
+        distanceSortOrder: validated.distanceSortOrder
+      }
+    };
   }
 
   if (toolName === "find_nearby_ngos" && user.role === USER_ROLES.DONOR) {
-    return recommendationService.findNgosForDonor({
+    const validated = validateNgoArguments(args);
+    const result = await recommendationService.findNgosForDonor({
       donorId: user.id,
-      ...validateNgoArguments(args)
+      ...validated
     });
+    return {
+      result,
+      intent: {
+        target: "ngo",
+        category: validated.category || null,
+        maxDistanceKm: validated.maxDistanceKm ?? null,
+        sortByDistance: validated.sortByDistance,
+        distanceSortOrder: validated.distanceSortOrder
+      }
+    };
   }
 
   throw new AppError("The requested FreshTrack tool is not available.", 422, "AI_TOOL_NOT_ALLOWED");
 }
 
-async function executeRecommendationIntent(intent, user) {
-  if (user.role === USER_ROLES.DONOR && intent.target === "ngo") {
-    return recommendationService.findNgosForDonor({
-      donorId: user.id,
-      category: intent.category || undefined,
-      maxDistanceKm: intent.maxDistanceKm || undefined
-    });
-  }
-  if (user.role === USER_ROLES.NGO && intent.target === "donation") {
-    return recommendationService.findDonationsForNgo({
-      ngoId: user.id,
-      category: intent.category || undefined,
-      maxDistanceKm: intent.maxDistanceKm || undefined
-    });
-  }
-  throw new AppError("The requested FreshTrack recommendation is not available for this account.", 422, "AI_TOOL_NOT_ALLOWED");
-}
-
-function sanitizeRecommendationResult(result) {
-  if (!Array.isArray(result)) return result;
-
-  return result.map((candidate) => {
-    if (candidate.ngoId) {
-      return {
-        organizationName: candidate.organizationName,
-        name: candidate.name,
-        location: candidate.location,
-        acceptedCategories: candidate.acceptedCategories,
-        isAcceptingDonations: candidate.isAcceptingDonations,
-        currentNeedDescription: candidate.currentNeedDescription,
-        distanceKm: candidate.distanceKm
-      };
-    }
-
-    return {
-      foodName: candidate.foodName,
-      category: candidate.category,
-      quantity: candidate.quantity,
-      quantityValue: candidate.quantityValue,
-      quantityUnit: candidate.quantityUnit,
-      location: candidate.location,
-      availableUntil: candidate.availableUntil,
-      distanceKm: candidate.distanceKm
-    };
-  });
-}
-
 function buildUiRecommendations(result) {
   if (!Array.isArray(result)) return [];
 
-  return result.map((candidate) => {
+  const seenIds = new Set();
+  return result.flatMap((candidate) => {
     if (candidate.ngoId) {
-      return {
+      if (!/^[a-f\d]{24}$/i.test(candidate.ngoId) || seenIds.has(candidate.ngoId) ||
+          typeof candidate.distanceKm !== "number" || !Number.isFinite(candidate.distanceKm)) return [];
+      seenIds.add(candidate.ngoId);
+      return [{
         type: "ngo",
         id: candidate.ngoId,
         name: candidate.name,
@@ -294,10 +251,13 @@ function buildUiRecommendations(result) {
         ...(candidate.currentNeedDescription
           ? { currentNeedDescription: candidate.currentNeedDescription }
           : {})
-      };
+      }];
     }
 
-    return {
+    if (!/^[a-f\d]{24}$/i.test(candidate.donationId || "") || seenIds.has(candidate.donationId) ||
+        typeof candidate.distanceKm !== "number" || !Number.isFinite(candidate.distanceKm)) return [];
+    seenIds.add(candidate.donationId);
+    return [{
       type: "donation",
       id: candidate.donationId,
       foodName: candidate.foodName,
@@ -308,11 +268,11 @@ function buildUiRecommendations(result) {
       location: candidate.location,
       distanceKm: candidate.distanceKm,
       availableUntil: candidate.availableUntil
-    };
-  });
+    }];
+  }).slice(0, 5);
 }
 
-function signRecommendationContext(result, intent, user) {
+function signRecommendationContext(recommendations, intent, user) {
   if (![USER_ROLES.DONOR, USER_ROLES.NGO].includes(user?.role)) return undefined;
 
   const target = user.role === USER_ROLES.DONOR && intent.target === "ngo"
@@ -320,18 +280,19 @@ function signRecommendationContext(result, intent, user) {
     : user.role === USER_ROLES.NGO && intent.target === "donation"
       ? "donation"
       : "none";
-  const ids = target === "ngo"
-    ? result.map((candidate) => candidate.ngoId)
-    : target === "donation"
-      ? result.map((candidate) => candidate.donationId)
-      : [];
+  const expectedType = target === "ngo" ? "ngo" : target === "donation" ? "donation" : null;
+  const ids = expectedType
+    ? recommendations
+      .filter((recommendation) => recommendation.type === expectedType)
+      .map((recommendation) => recommendation.id)
+    : [];
   const payload = {
     userId: user.id,
     role: user.role,
     target,
     ids,
     category: target !== "none" ? intent.category || null : null,
-    maxDistanceKm: target !== "none" ? intent.maxDistanceKm || null : null,
+    maxDistanceKm: target !== "none" ? intent.maxDistanceKm ?? null : null,
     issuedAt: Date.now()
   };
   const encoded = Buffer.from(JSON.stringify(payload)).toString("base64url");
@@ -371,7 +332,11 @@ function verifyRecommendationContext(token, user) {
     (payload.role === USER_ROLES.NGO && ["donation", "none"].includes(payload.target));
   const validIds = Array.isArray(payload.ids) &&
     payload.ids.length <= 5 &&
-    payload.ids.every((id) => typeof id === "string" && /^[a-f\d]{24}$/i.test(id));
+    payload.ids.every((id, index) =>
+      typeof id === "string" &&
+      /^[a-f\d]{24}$/i.test(id) &&
+      payload.ids.indexOf(id) === index
+    );
   const validCategory = payload.category === null ||
     (typeof payload.category === "string" && payload.category.trim().length > 0 && payload.category.length <= 80);
   const validDistance = payload.maxDistanceKm === null ||
@@ -407,278 +372,227 @@ function latestRecommendationContext(history, user) {
   return null;
 }
 
-function recommendationCandidateName(candidate, target) {
-  return target === "ngo"
-    ? candidate.organizationName || candidate.name
-    : candidate.foodName;
-}
-
-function clarificationForCandidates(candidates, target, unavailable = false) {
-  const entity = target === "ngo" ? "NGO" : target === "donation" ? "Donation" : "recommendation";
-  if (!candidates.length) {
-    return unavailable
-      ? `I don't have current, verified ${entity} details from that previous result to explain. Please run the search again.`
-      : `I don't have validated ${entity} details from a previous search to explain. Please run the search again.`;
-  }
-
-  const names = candidates.map((candidate) => recommendationCandidateName(candidate, target));
-  const list = names.length > 1 ? names.join(", ") : names[0];
-  if (unavailable) {
-    return `I can't determine why an unshown ${entity} was excluded from the previous results. Which ${entity} do you mean? The verified previous results were: ${list}.`;
-  }
-  return `Which ${entity.toLowerCase()} do you mean? The verified previous results were: ${list}.`;
-}
-
-function explainValidatedRecommendation(candidate, target, category, displayLocale, displayTimeZone) {
-  const distance = `${candidate.distanceKm} km from your saved location`;
-  if (target === "ngo") {
-    const name = recommendationCandidateName(candidate, target);
-    const accepted = candidate.acceptedCategories || [];
-    const categoryReason = category
-      ? normalizeCategory(category) === "any" || accepted.some((item) => normalizeCategory(item) === "any")
-        ? ` It accepts any food category, including ${category}.`
-        : ` It accepts ${accepted.join(", ")}, including the requested ${category}.`
-      : "";
-    const radiusReason = candidate.operatingRadiusKm == null
-      ? ""
-      : ` The location is within its configured ${candidate.operatingRadiusKm} km operating radius.`;
-    return `${name} was included in your previous results because it is currently accepting donations and is ${distance}.${categoryReason}${radiusReason}`;
-  }
-
-  const categoryReason = category
-    ? ` It matches the requested ${candidate.category} category.`
-    : "";
-  const availableUntil = new Date(candidate.availableUntil).toLocaleString(
-    displayLocale || undefined,
-    displayTimeZone ? { timeZone: displayTimeZone } : undefined
-  );
-  return `${candidate.foodName} was included in your previous results because it is currently ${candidate.status}, has not passed its availability deadline (${availableUntil}), and is ${distance}.${categoryReason}`;
-}
-
-async function recommendationFollowUpResponse(message, history, user, displayLocale, displayTimeZone) {
-  if (user?.role === USER_ROLES.ADMIN) {
-    return {
-      message: "I'm logged in with your admin account, so I can't provide donor or NGO recommendation details.",
-      recommendations: []
-    };
-  }
-
-  const context = latestRecommendationContext(history, user);
-  if (!context || context.target === "none" || !context.ids.length) {
-    return { message: clarificationForCandidates([], null), recommendations: [] };
-  }
-
-  const candidates = await recommendationService.resolveChatRecommendationContext({
-    userId: user.id,
-    role: user.role,
-    target: context.target,
-    ids: context.ids,
-    category: context.category,
-    maxDistanceKm: context.maxDistanceKm
-  });
-  if (!candidates.length) {
-    return {
-      message: clarificationForCandidates([], context.target, true),
-      recommendations: []
-    };
-  }
-
-  const text = message.toLowerCase();
-  const mentionsOther =
-    /^why\s+(?:not|no)\b|\bother\b|\bnot recommended\b|\bnot shown\b|\bexcluded\b|\bwasn't\b|\bwas not\b|\bdidn't\b|\bdid not\b/i.test(message);
-  const named = candidates.filter((candidate) =>
-    text.includes(recommendationCandidateName(candidate, context.target).toLowerCase())
-  );
-  if (mentionsOther && named.length === 1) {
-    return {
-      message: `The verified previous results show ${recommendationCandidateName(named[0], context.target)} was recommended. I can't explain an unshown ${context.target === "ngo" ? "NGO" : "Donation"} from these records. Which other candidate do you mean?`,
-      recommendations: []
-    };
-  }
-  const refersToSingle = /\b(?:this|that)\b/i.test(message) && candidates.length === 1;
-  const selected = named.length === 1
-    ? named[0]
-    : !mentionsOther && (refersToSingle || candidates.length === 1)
-      ? candidates[0]
-      : null;
-
-  if (!selected) {
-    return {
-      message: clarificationForCandidates(candidates, context.target, mentionsOther),
-      recommendations: []
-    };
-  }
-
-  return {
-    message: explainValidatedRecommendation(
-      selected,
-      context.target,
-      context.category,
-      displayLocale,
-      displayTimeZone
-    ),
-    recommendations: []
+async function requestCompletion(providerConfig, messages, options = {}) {
+  const body = {
+    model: options.model || providerConfig.model,
+    messages,
+    tools: options.tools,
+    tool_choice: options.toolChoice,
+    temperature: options.temperature,
+    max_tokens: options.maxTokens
   };
+  const response = await fetch(providerConfig.endpoint, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${providerConfig.apiKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(body)
+  });
+  let completion;
+  try {
+    completion = await response.json();
+  } catch (_error) {
+    throw new AppError(`${providerConfig.name} returned an invalid response.`, 502, "AI_SERVICE_ERROR");
+  }
+  if (!response.ok) {
+    throw new Error(`${providerConfig.name} returned HTTP ${response.status}: ${completion?.error?.message || "Unknown provider error"}`);
+  }
+  return completion;
 }
 
-/**
- * Generate a conversational response using Groq.
- *
- * @param {string} message - User message
- * @param {Object} [options] - Additional options (e.g. model override)
- * @returns {Promise<string>} The generated text response
- */
-async function generateChatResponse(message, options = {}) {
-  if (!env.groqApiKey) {
-    throw new AppError(
-      "Groq API key is not configured. Please set GROQ_API_KEY in the environment.",
-      503,
-      "AI_CONFIG_ERROR"
-    );
+function parseClassification(assistantMessage) {
+  const call = (assistantMessage?.tool_calls || []).find(
+    (item) => item?.function?.name === CLASSIFY_CHAT_INTENT_TOOL.function.name
+  );
+  if (!call) {
+    throw new AppError("The assistant could not classify that message. Please try again.", 502, "AI_SERVICE_ERROR");
   }
+  let classification;
+  try {
+    classification = JSON.parse(call.function.arguments || "{}");
+  } catch (_error) {
+    throw new AppError("The assistant returned an invalid message classification.", 502, "AI_SERVICE_ERROR");
+  }
+  if (!classification || typeof classification !== "object" || Array.isArray(classification)) {
+    throw new AppError("The assistant returned an invalid message classification.", 502, "AI_SERVICE_ERROR");
+  }
+  if (
+    !["search", "general", "unsupported"].includes(classification.action) ||
+    (classification.target !== null && !["ngo", "donation"].includes(classification.target)) ||
+    (classification.category !== null && (typeof classification.category !== "string" || classification.category.length > 80)) ||
+    (classification.maxDistanceKm !== null &&
+      (typeof classification.maxDistanceKm !== "number" || !Number.isFinite(classification.maxDistanceKm))) ||
+    typeof classification.sortByDistance !== "boolean" ||
+    !["ascending", "descending"].includes(classification.distanceSortOrder) ||
+    typeof classification.reply !== "string" ||
+    classification.reply.length > 2000
+  ) {
+    throw new AppError("The assistant returned an invalid message classification.", 502, "AI_SERVICE_ERROR");
+  }
+  if (typeof classification.category === "string" && !classification.category.trim()) {
+    classification.category = null;
+  }
+  return classification;
+}
 
+async function classifyMessage(message, user, context, providerConfig, options) {
+  const roleName = user?.role === USER_ROLES.DONOR ? "DONOR" : "NGO";
+  const contextSummary = context && context.target !== "none"
+    ? `The last verified search was for ${context.target}, category ${context.category || "any"}, radius ${context.maxDistanceKm ?? "unspecified"} km.`
+    : "";
+  const recentHistory = Array.isArray(options.history)
+    ? options.history
+      .filter((item) =>
+        (item?.role === "user" || item?.role === "assistant") &&
+        typeof item.content === "string"
+      )
+      .slice(-6)
+      .map((item) => ({ role: item.role, content: item.content.slice(0, 1000) }))
+    : [];
+  const messages = [
+    {
+      role: "system",
+      content: `${systemInstructionForRole(user.role)}\nThis is a routing step only; you cannot search the database or perform account actions. Authenticated FreshTrack role: ${roleName}.`
+    },
+    {
+      role: "system",
+      content: `Classify the latest user message. Choose search only when they want actual matching NGO or donation results (for example, asking to find, show, search, browse, or locate them), and set target to "ngo" or "donation" to match the entity requested. With the DONOR role, searches for recipients or places to donate target NGOs. With the NGO role, searches for food to receive or collect target donations. Questions about FreshTrack, identity, how to donate, how to use the platform, or how the platform reduces food waste are general questions, not searches, unless they want actual matching NGO or donation results. For example, "Who are you?", "What is FreshTrack?", "How can I donate food?", "How do I donate?", "How do I use FreshTrack?", and "How does FreshTrack help reduce food waste?" are general. Choose general also for food donation/safety questions, greetings, and ordinary conversation. Choose unsupported when they ask the assistant to perform an action unavailable in chat, such as submitting a request, sending an offer, or booking pickup. Set target to null for general or unsupported messages.
+For search, use a food category only when the latest user message names one; otherwise use null. Do not carry a previous category into a new search without a category. For example, after a Rice search, "Find available food donations near me" has no category, while "What about vegetables instead?" uses Vegetables. Use the maximum distance requested in the latest message when present; otherwise use null. Set sortByDistance to true whenever the user asks for distance ordering. Set distanceSortOrder to "ascending" for closest, nearest, or nearby results and "descending" for farthest or most distant results; use "ascending" when sortByDistance is false. A search returns verified database results; never invent results. For general or unsupported messages, write a concise, natural answer grounded in the FreshTrack instructions.
+${contextSummary ? `${contextSummary} Use the recent conversation below to understand short follow-ups such as changing the requested category.` : "Use the recent conversation below to understand short follow-ups such as changing the requested category."}`
+    },
+    ...recentHistory,
+    { role: "user", content: message.trim() }
+  ];
+  const completion = await requestCompletion(providerConfig, messages, {
+    model: options.model,
+    tools: [CLASSIFY_CHAT_INTENT_TOOL],
+    toolChoice: {
+      type: "function",
+      function: { name: CLASSIFY_CHAT_INTENT_TOOL.function.name }
+    },
+    temperature: options.temperature ?? 0,
+    maxTokens: 512
+  });
+  const assistantMessage = completion?.choices?.[0]?.message;
+  if (!assistantMessage) {
+    throw new AppError(`Unexpected response received from ${providerConfig.name} API`, 502, "AI_SERVICE_ERROR");
+  }
+  return parseClassification(assistantMessage);
+}
+
+async function generateChatResponse(message, options = {}) {
   if (!message || typeof message !== "string" || !message.trim()) {
     throw new AppError("Message is required and must be a non-empty string", 422, "VALIDATION_ERROR");
   }
-
-  const intent = extractIntent(message, options.history);
-  const unsupported = capabilityMessage(options.user?.role, intent.target);
-  if (unsupported) {
-    return {
-      message: unsupported,
-      recommendations: [],
-      recommendationContext: signRecommendationContext([], { target: "none" }, options.user)
-    };
-  }
-  const knownAnswer = knownFeatureAnswer(message, options.user?.role);
-  if (knownAnswer) return { message: knownAnswer, recommendations: [] };
-
-  if (isRecommendationFollowUp(message)) {
-    return recommendationFollowUpResponse(
-      message,
-      options.history,
-      options.user,
-      options.displayLocale,
-      options.displayTimeZone
-    );
+  if (![USER_ROLES.DONOR, USER_ROLES.NGO].includes(options.user?.role)) {
+    throw new AppError("The FreshTrack Assistant is not available for this account.", 403, "FORBIDDEN");
   }
 
-  if (intent.kind === "recommendation") {
-    try {
-      const result = await executeRecommendationIntent(intent, options.user);
-      const recommendations = buildUiRecommendations(result);
-      return {
-        message: groundedRecommendationMessage(recommendations),
-        recommendations,
-        recommendationContext: signRecommendationContext(result, intent, options.user)
-      };
-    } catch (error) {
-      const errorMessage = error instanceof AppError ? error.message : "Recommendation data is temporarily unavailable.";
-      return {
-        message: groundedRecommendationMessage([], errorMessage),
-        recommendations: [],
-        recommendationContext: signRecommendationContext([], intent, options.user)
-      };
-    }
+  const providerConfig = getProviderConfig();
+  if (!providerConfig.apiKey) {
+    throw new AppError("The assistant service is not available right now. Please try again later.", 503, "AI_CONFIG_ERROR");
   }
-
-  const modelName = options.model || DEFAULT_MODEL;
-  const groq = new Groq({ apiKey: env.groqApiKey });
-  const tools = toolsForRole(options.user?.role);
-  const messages = [
-    { role: "system", content: systemInstructionForRole(options.user?.role) },
-    ...sanitizeHistory(options.history),
-    { role: "user", content: message.trim() }
-  ];
-  let recommendations = [];
-  let recommendationToolExecuted = false;
-  let toolError;
 
   try {
-    for (let round = 0; round <= MAX_TOOL_ROUNDS; round += 1) {
-      const completion = await groq.chat.completions.create({
-        model: modelName,
-        messages,
-        ...(tools.length ? { tools } : {}),
-        ...(tools.length
-          ? { tool_choice: "auto" }
-          : {}),
-        temperature: options.temperature ?? 0.7,
-        max_tokens: options.maxTokens ?? 1024
-      });
-
-      const assistantMessage = completion?.choices?.[0]?.message;
-      if (!assistantMessage) {
-        throw new AppError("Unexpected response received from Groq API", 502, "AI_SERVICE_ERROR");
-      }
-
-      const toolCalls = assistantMessage.tool_calls || [];
-      if (!toolCalls.length) {
-        if (typeof assistantMessage.content !== "string") {
-          throw new AppError("Unexpected response received from Groq API", 502, "AI_SERVICE_ERROR");
-        }
-        return recommendationToolExecuted && !toolError
-          ? { message: groundedRecommendationMessage(recommendations, toolError), recommendations }
-          : { message: assistantMessage.content, recommendations };
-      }
-
-      if (round === MAX_TOOL_ROUNDS) {
-        throw new AppError("The recommendation request took too long. Please try again.", 502, "AI_TOOL_LOOP_LIMIT");
-      }
-
-      messages.push(assistantMessage);
-      for (const toolCall of toolCalls) {
-        let result;
-        try {
-          const internalResult = await executeTool(enforceExplicitDistance(toolCall, message), options.user);
-          recommendationToolExecuted = true;
-          recommendations = buildUiRecommendations(internalResult);
-          result = sanitizeRecommendationResult(internalResult);
-        } catch (error) {
-          recommendationToolExecuted = true;
-          toolError = error instanceof AppError ? error.message : "Recommendation data is temporarily unavailable.";
-          result = {
-            error: toolError
-          };
-        }
-        messages.push({
-          role: "tool",
-          tool_call_id: toolCall.id,
-          content: JSON.stringify(result)
-        });
-      }
-    }
-  } catch (error) {
-    if (error instanceof AppError) {
-      throw error;
-    }
-
-    // Safe error message without exposing credentials
-    const rawMessage = error?.message || "Unknown error";
-    const safeMessage = rawMessage.replace(/gsk_[a-zA-Z0-9_-]+/gi, "gsk_[REDACTED]");
-
-    throw new AppError(
-      `Groq API request failed: ${safeMessage}`,
-      502,
-      "AI_SERVICE_ERROR"
+    const context = latestRecommendationContext(options.history, options.user);
+    const classification = await classifyMessage(
+      message, options.user, context, providerConfig, options
     );
+    if (classification.action === "general" || classification.action === "unsupported") {
+      if (!classification.reply.trim()) {
+        throw new AppError("The assistant returned an empty conversational response.", 502, "AI_SERVICE_ERROR");
+      }
+      return {
+        message: classification.reply.trim(),
+        recommendations: [],
+        ...(classification.action === "unsupported"
+          ? { recommendationContext: signRecommendationContext([], { target: "none" }, options.user) }
+          : {})
+      };
+    }
+    const expectedTarget = options.user.role === USER_ROLES.DONOR ? "ngo" : "donation";
+    if (classification.target !== expectedTarget) {
+      return {
+        message: expectedTarget === "ngo"
+          ? "I can help you find nearby NGOs that accept your food donations."
+          : "I can help your organization find available food donations nearby.",
+        recommendations: [],
+        recommendationContext: signRecommendationContext([], { target: "none" }, options.user)
+      };
+    }
+    const toolCall = {
+      type: "function",
+      function: {
+        name: options.user.role === USER_ROLES.DONOR ? "find_nearby_ngos" : "find_nearby_donations",
+        arguments: JSON.stringify({
+          category: classification.category,
+          maxDistanceKm: classification.maxDistanceKm,
+          sortByDistance: classification.sortByDistance,
+          distanceSortOrder: classification.distanceSortOrder
+        })
+      }
+    };
+    const execution = await executeTool(toolCall, options.user);
+    const recommendations = buildUiRecommendations(execution.result);
+    return {
+      message: groundedRecommendationMessage(recommendations, null, execution.intent),
+      recommendations,
+      recommendationContext: signRecommendationContext(recommendations, execution.intent, options.user)
+    };
+  } catch (error) {
+    if (error?.code === "LOCATION_REQUIRED") {
+      return {
+        message: options.user.role === USER_ROLES.DONOR
+          ? "Your location hasn't been saved yet. Please update your profile location so I can find suitable results nearby."
+          : "Your organisation location hasn't been saved yet. Please update your profile location so I can find nearby donations.",
+        recommendations: [],
+        recommendationContext: signRecommendationContext([], { target: "none" }, options.user)
+      };
+    }
+    if (error?.code === "AI_TOOL_ARGUMENTS_ERROR") {
+      return {
+        message: "Please choose a search radius between 0.1 and 50 km.",
+        recommendations: [],
+        recommendationContext: signRecommendationContext([], { target: "none" }, options.user)
+      };
+    }
+    if (error?.code === "DONATION_NOT_FOUND") {
+      return {
+        message: "I couldn't find that donation. Please check the donation and try again.",
+        recommendations: [],
+        recommendationContext: signRecommendationContext([], { target: "none" }, options.user)
+      };
+    }
+    if (error?.code === "FORBIDDEN") {
+      return {
+        message: "I can only find NGOs for a donation from your account.",
+        recommendations: [],
+        recommendationContext: signRecommendationContext([], { target: "none" }, options.user)
+      };
+    }
+    if (error instanceof AppError && error.code === "AI_CONFIG_ERROR") throw error;
+    if (error instanceof AppError && error.code === "AI_SERVICE_ERROR") {
+      throw new AppError("The assistant service is temporarily unavailable. Please try again.", error.statusCode, error.code);
+    }
+    if (error instanceof AppError) throw error;
+    throw new AppError("The assistant service is temporarily unavailable. Please try again.", 502, "AI_SERVICE_ERROR");
   }
 }
 
 module.exports = {
   generateChatResponse,
-  DEFAULT_MODEL,
+  ACTIVE_AI_PROVIDER,
+  AI_PROVIDERS,
+  getProviderConfig,
+  requestCompletion,
   SYSTEM_INSTRUCTION,
-  MAX_TOOL_ROUNDS,
-  toolsForRole,
+  CLASSIFY_CHAT_INTENT_TOOL,
   systemInstructionForRole,
   executeTool,
-  executeRecommendationIntent,
-  sanitizeRecommendationResult,
   buildUiRecommendations,
-  sanitizeHistory,
   signRecommendationContext,
   verifyRecommendationContext,
   latestRecommendationContext,
-  recommendationFollowUpResponse
+  validateNgoArguments
 };

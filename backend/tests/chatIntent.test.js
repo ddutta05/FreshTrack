@@ -1,39 +1,27 @@
-const { extractIntent, capabilityMessage } = require("../src/services/chatIntent.service");
 const recommendationService = require("../src/services/recommendation.service");
+const { CLASSIFY_CHAT_INTENT_TOOL } = require("../src/services/groq.service");
 
-describe("Structured chat intent", () => {
-  test.each([
-    ["find a NGO", { kind: "recommendation", target: "ngo", category: null, maxDistanceKm: null }],
-    ["find any donation", { kind: "recommendation", target: "donation", category: null, maxDistanceKm: null }],
-    ["find vegetable donations within 5 km", { kind: "recommendation", target: "donation", category: "vegetable", maxDistanceKm: 5 }],
-  ])("extracts %s", (message, expected) => {
-    expect(extractIntent(message)).toMatchObject(expected);
+describe("Model-led FreshTrack intent classification", () => {
+  test("normalizes categories for database matching", () => {
+    expect(recommendationService.normalizeCategory("Vegetables")).toBe("vegetable");
+    expect(recommendationService.normalizeCategory("Cooked Food")).toBe("cooked food");
   });
 
-  test("inherits target for a short category follow-up", () => {
-    expect(extractIntent("chocolate", [{ role: "user", content: "find an NGO" }])).toMatchObject({
-      kind: "recommendation",
-      target: "ngo",
-      category: "chocolate",
-    });
-  });
-
-  test.each([
-    ["Find NGOs that accept Cooked Food.", "Cooked Food"],
-    ["Find available Rice donations.", "Rice"],
-    ["Find NGOs that accept Gluten-Free Meals.", "Gluten-Free Meals"],
-  ])("preserves the full category name in %s", (message, category) => {
-    expect(extractIntent(message).category).toBe(category);
-  });
-
-  test("does not turn why not into a repeated recommendation", () => {
-    expect(extractIntent("why not", [{ role: "user", content: "find donations" }])).toMatchObject({ kind: "general" });
-  });
-
-  test("guards role capabilities", () => {
-    expect(capabilityMessage("donor", "donor")).toMatch(/can't search for other donors/);
-    expect(capabilityMessage("ngo", "donor")).toMatch(/can't search for donor accounts/);
-    expect(capabilityMessage("ngo", "ngo")).toMatch(/can't search for other NGOs/);
+  test("uses only search, general, and unsupported routes", () => {
+    expect(CLASSIFY_CHAT_INTENT_TOOL.function.parameters.properties.action.enum).toEqual([
+      "search",
+      "general",
+      "unsupported"
+    ]);
+    expect(CLASSIFY_CHAT_INTENT_TOOL.function.parameters.required).toEqual([
+      "action",
+      "target",
+      "category",
+      "maxDistanceKm",
+      "sortByDistance",
+      "distanceSortOrder",
+      "reply"
+    ]);
   });
 });
 

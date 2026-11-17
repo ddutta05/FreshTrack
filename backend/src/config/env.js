@@ -61,7 +61,8 @@ const env = {
   adminName: process.env.ADMIN_NAME || "",
   adminEmail: (process.env.ADMIN_EMAIL || "").toLowerCase(),
   adminPassword: process.env.ADMIN_PASSWORD || "",
-  groqApiKey: process.env.GROQ_API_KEY || ""
+  groqApiKey: process.env.GROQ_API_KEY || "",
+  openRouterApiKey: process.env.OPENROUTER_API_KEY || ""
 };
 
 module.exports = env;
